@@ -1,4 +1,3 @@
-// src/models/User.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -22,6 +21,7 @@ const UserSchema = new mongoose.Schema({
   phone: {
     type: String,
     required: [true, 'Veuillez ajouter un numéro de téléphone'],
+    unique: true, // VERROUILLAGE ACTIVÉ
     trim: true
   },
   role: {
@@ -47,10 +47,9 @@ const UserSchema = new mongoose.Schema({
   resetPasswordExpire: Date
 });
 
-// --- CORRECTION DU BUG "next is not a function" ---
-// On retire le paramètre 'next' et on laisse Mongoose gérer la Promesse (Async/Await pur)
+// --- HACHAGE MOT DE PASSE (CORRIGÉ SANS NEXT) ---
 UserSchema.pre('save', async function() {
-  // Si le mot de passe n'a pas changé, on ne fait rien et on sort direct
+  // Si le mot de passe n'a pas changé, on ne fait rien
   if (!this.isModified('password')) {
     return;
   }
