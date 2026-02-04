@@ -7,7 +7,8 @@ const {
   getAllUsers, 
   deleteUser,
   toggleBlockUser,
-  getHistory // <--- IMPORT
+  getHistory,
+  updateDetails // <--- NOUVEL IMPORT
 } = require('../controllers/auth');
 
 const { protect, authorize } = require('../middleware/auth'); 
@@ -18,8 +19,11 @@ router.post('/register', register);
 router.post('/login', login);
 router.get('/logout', logout);
 
-// Route Historique (Doit être placée AVANT les routes avec :id pour éviter les conflits)
-router.get('/history', protect, getHistory); // <--- NOUVELLE ROUTE
+// Route Historique
+router.get('/history', protect, getHistory);
+
+// Route Mise à jour Profil (NOUVEAU)
+router.put('/updatedetails', protect, updateDetails);
 
 // Routes Admin
 router.get('/users', protect, authorize('admin'), getAllUsers);
