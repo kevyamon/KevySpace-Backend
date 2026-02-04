@@ -6,7 +6,6 @@ const { cloudinary } = require('../config/cloudinary');
 // --- RESSOURCES (PUBLIQUES) ---
 
 // @desc    Ajouter une ressource
-// @route   POST /api/resources
 exports.createResource = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: "Aucun fichier" });
@@ -26,9 +25,9 @@ exports.createResource = async (req, res) => {
       size
     });
 
-    // ⚡ TEMPS RÉEL : On prévient tout le monde
+    // ⚡ SOCKET : On prévient tout le monde (Public)
     const io = req.app.get('io');
-    io.emit('resource_action', { type: 'add', data: resource });
+    if (io) io.emit('resource_action', { type: 'add', data: resource });
 
     res.status(201).json({ success: true, data: resource });
   } catch (err) {
@@ -37,7 +36,6 @@ exports.createResource = async (req, res) => {
 };
 
 // @desc    Voir les ressources
-// @route   GET /api/resources
 exports.getResources = async (req, res) => {
   try {
     const resources = await Resource.find().sort({ createdAt: -1 });
@@ -48,22 +46,17 @@ exports.getResources = async (req, res) => {
 };
 
 // @desc    Supprimer une ressource
-// @route   DELETE /api/resources/:id
 exports.deleteResource = async (req, res) => {
   try {
     const resource = await Resource.findById(req.params.id);
     if (!resource) return res.status(404).json({ success: false, error: "Non trouvé" });
 
-    // Suppression Cloudinary
-    await cloudinary.uploader.destroy(resource.cloudinaryId, { resource_type: 'raw' }); // 'raw' pour les fichiers génériques
-    // Note: Si c'est une image, parfois il faut resource_type: 'image'. Cloudinary est capricieux.
-    // Pour assurer le coup, on tente les deux si besoin ou on gère les erreurs silencieusement.
-    
+    await cloudinary.uploader.destroy(resource.cloudinaryId, { resource_type: 'raw' });
     await resource.deleteOne();
 
-    // ⚡ TEMPS RÉEL
+    // ⚡ SOCKET
     const io = req.app.get('io');
-    io.emit('resource_action', { type: 'delete', id: req.params.id });
+    if (io) io.emit('resource_action', { type: 'delete', id: req.params.id });
 
     res.status(200).json({ success: true, data: {} });
   } catch (err) {
@@ -75,7 +68,6 @@ exports.deleteResource = async (req, res) => {
 // --- CERTIFICATS (PRIVÉS) ---
 
 // @desc    Décernet un certificat
-// @route   POST /api/certificates
 exports.awardCertificate = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: "Aucun fichier" });
@@ -87,9 +79,16 @@ exports.awardCertificate = async (req, res) => {
       cloudinaryId: req.file.filename
     });
 
-    // ⚡ TEMPS RÉEL : On envoie l'info (le front filtrera si ça le concerne)
+    // ⚡ SOCKET : IMPORTANT
+    // On envoie 'certificate.user' pour que le front puisse filtrer
     const io = req.app.get('io');
-    io.emit('certificate_action', { type: 'add', data: certificate });
+    if (io) {
+      io.emit('certificate_action', { 
+        type: 'add', 
+        data: certificate, 
+        targetUserId: req.body.user_id // On envoie explicitement l'ID cible
+      });
+    }
 
     res.status(201).json({ success: true, data: certificate });
   } catch (err) {
@@ -98,7 +97,6 @@ exports.awardCertificate = async (req, res) => {
 };
 
 // @desc    Voir MES certificats
-// @route   GET /api/certificates
 exports.getMyCertificates = async (req, res) => {
   try {
     const certs = await Certificate.find({ user: req.user.id }).sort({ awardedAt: -1 });
@@ -109,10 +107,8 @@ exports.getMyCertificates = async (req, res) => {
 };
 
 // @desc    Voir TOUS les certificats (Admin)
-// @route   GET /api/certificates/all
 exports.getAllCertificates = async (req, res) => {
   try {
-    // Populate pour avoir le nom de l'élève
     const certs = await Certificate.find().populate('user', 'name email').sort({ awardedAt: -1 });
     res.status(200).json({ success: true, data: certs });
   } catch (err) {
@@ -121,21 +117,30 @@ exports.getAllCertificates = async (req, res) => {
 };
 
 // @desc    Supprimer un certificat
-// @route   DELETE /api/certificates/:id
 exports.deleteCertificate = async (req, res) => {
   try {
     const cert = await Certificate.findById(req.params.id);
     if (!cert) return res.status(404).json({ success: false, error: "Non trouvé" });
 
+    // On garde l'ID de l'user AVANT de supprimer pour le notifier
+    const targetUserId = cert.user;
+
     await cloudinary.uploader.destroy(cert.cloudinaryId);
     await cert.deleteOne();
 
-    // ⚡ TEMPS RÉEL
+    // ⚡ SOCKET : On prévient l'étudiant qu'on lui a retiré son diplôme
     const io = req.app.get('io');
-    io.emit('certificate_action', { type: 'delete', id: req.params.id, userId: cert.user });
+    if (io) {
+      io.emit('certificate_action', { 
+        type: 'delete', 
+        id: req.params.id, 
+        targetUserId: targetUserId // L'ID cible
+      });
+    }
 
     res.status(200).json({ success: true, data: {} });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ success: false, error: "Erreur suppression" });
   }
 };
