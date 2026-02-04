@@ -1,4 +1,4 @@
-// src/controllers/assets.js
+// backend/src/controllers/assets.js
 const Resource = require('../models/Resource');
 const Certificate = require('../models/Certificate');
 const { cloudinary } = require('../config/cloudinary');
@@ -67,12 +67,12 @@ exports.deleteResource = async (req, res) => {
 
 // --- CERTIFICATS (PRIVÉS) ---
 
-// @desc    Décernet un certificat
+// @desc    Décerner un certificat
 exports.awardCertificate = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: "Aucun fichier" });
     
-    // CORRECTION ICI : On accepte 'user_id' OU 'user' pour être sûr de choper l'ID
+    // On s'assure de récupérer l'ID proprement (user_id ou user)
     const userId = req.body.user_id || req.body.user;
 
     if (!userId) {
@@ -89,10 +89,13 @@ exports.awardCertificate = async (req, res) => {
     // ⚡ SOCKET : IMPORTANT
     const io = req.app.get('io');
     if (io) {
+      // On convertit explicitement en String pour la comparaison Frontend
+      const targetUserIdString = userId.toString();
+      
       io.emit('certificate_action', { 
         type: 'add', 
         data: certificate, 
-        targetUserId: userId.toString() // On force en String pour la comparaison frontend
+        targetUserId: targetUserIdString
       });
     }
 
@@ -128,19 +131,19 @@ exports.deleteCertificate = async (req, res) => {
     const cert = await Certificate.findById(req.params.id);
     if (!cert) return res.status(404).json({ success: false, error: "Non trouvé" });
 
-    // On garde l'ID et on le convertit en String TOUT DE SUITE
-    const targetUserId = cert.user.toString();
+    // IMPORTANT : Récupérer l'ID utilisateur AVANT la suppression pour le notifier
+    const targetUserId = cert.user ? cert.user.toString() : null;
 
     await cloudinary.uploader.destroy(cert.cloudinaryId);
     await cert.deleteOne();
 
     // ⚡ SOCKET
     const io = req.app.get('io');
-    if (io) {
+    if (io && targetUserId) {
       io.emit('certificate_action', { 
         type: 'delete', 
         id: req.params.id, 
-        targetUserId: targetUserId // String garantie
+        targetUserId: targetUserId 
       });
     }
 
