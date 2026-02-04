@@ -1,8 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-// const mongoSanitize = require('express-mongo-sanitize'); // <--- ON DÉSACTIVE CA
-const xss = require('xss-clean');
 const hpp = require('hpp');
 const cookieParser = require('cookie-parser');
 
@@ -30,21 +28,33 @@ app.use(cors({
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-// 5. Nettoyage des données (Remplacement Manuel Anti-Bug Render)
-// Au lieu d'utiliser la librairie qui plante, on utilise cette fonction custom.
-// Elle supprime toutes les clés qui commencent par "$" (Injection NoSQL) ou contiennent "."
+// 5. Nettoyage des données (ULTIMATE SANITIZER : NoSQL + XSS)
+// Cette fonction remplace mongoSanitize ET xss-clean qui plantent sur Render.
 app.use((req, res, next) => {
     const sanitize = (obj) => {
         if (!obj) return;
         for (const key in obj) {
+            // A. Protection NoSQL (Anti-Injection $)
             if (key.startsWith('$') || key.includes('.')) {
-                delete obj[key]; // On supprime la clé dangereuse
-            } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-                sanitize(obj[key]); // On descend dans les sous-dossiers
+                delete obj[key]; 
+                continue;
+            } 
+            
+            // B. Protection XSS (Anti-Script HTML)
+            if (typeof obj[key] === 'string') {
+                // On remplace les chevrons < et > pour empêcher les scripts de s'exécuter
+                obj[key] = obj[key]
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+            } 
+            // C. Récursivité (On descend dans les sous-objets)
+            else if (typeof obj[key] === 'object' && obj[key] !== null) {
+                sanitize(obj[key]);
             }
         }
     };
 
+    // On nettoie tout ce qui rentre
     sanitize(req.body);
     sanitize(req.query);
     sanitize(req.params);
@@ -53,7 +63,6 @@ app.use((req, res, next) => {
 });
 
 // 6. Autres sécurités
-app.use(xss()); // Nettoie le code HTML malveillant
 app.use(hpp()); // Prévient la pollution des paramètres HTTP
 
 // --- MONTAGE DES ROUTES ---
