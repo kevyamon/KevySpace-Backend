@@ -1,3 +1,4 @@
+// src/controllers/videos.js
 const Video = require('../models/Video');
 // On importe l'instance cloudinary configurée pour pouvoir supprimer des vidéos
 const { cloudinary } = require('../config/cloudinary');
@@ -177,6 +178,30 @@ exports.commentVideo = async (req, res, next) => {
     res.status(201).json({
       success: true,
       data: video.comments
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+};
+
+// @desc    Incrémenter le nombre de vues
+// @route   PUT /api/videos/:id/view
+// @access  Privé
+exports.viewVideo = async (req, res, next) => {
+  try {
+    const video = await Video.findByIdAndUpdate(
+      req.params.id,
+      { $inc: { views: 1 } },
+      { new: true }
+    );
+
+    if (!video) {
+      return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: video
     });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });

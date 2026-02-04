@@ -1,3 +1,4 @@
+// src/routes/videos.js
 const express = require('express');
 const { 
     getVideos, 
@@ -5,7 +6,8 @@ const {
     createVideo, 
     deleteVideo, 
     likeVideo, 
-    commentVideo 
+    commentVideo,
+    viewVideo // <--- AJOUT
 } = require('../controllers/videos');
 
 // On importe les vigiles (Protection et Rôles)
@@ -39,5 +41,6 @@ router
 // Routes d'interaction
 router.put('/:id/like', likeVideo); // Liker
 router.post('/:id/comment', commentVideo); // Commenter
+router.put('/:id/view', viewVideo); // Voir (Compteur vues)
 
 module.exports = router;
