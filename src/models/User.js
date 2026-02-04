@@ -21,13 +21,18 @@ const UserSchema = new mongoose.Schema({
   phone: {
     type: String,
     required: [true, 'Veuillez ajouter un numéro de téléphone'],
-    unique: true, // VERROUILLAGE ACTIVÉ
+    unique: true,
     trim: true
   },
   role: {
     type: String,
     enum: ['user', 'admin'],
     default: 'user'
+  },
+  // NOUVEAU CHAMP : BLOCAGE
+  isBlocked: {
+    type: Boolean,
+    default: false
   },
   password: {
     type: String,
@@ -47,14 +52,11 @@ const UserSchema = new mongoose.Schema({
   resetPasswordExpire: Date
 });
 
-// --- HACHAGE MOT DE PASSE (CORRIGÉ SANS NEXT) ---
+// --- HACHAGE MOT DE PASSE ---
 UserSchema.pre('save', async function() {
-  // Si le mot de passe n'a pas changé, on ne fait rien
   if (!this.isModified('password')) {
     return;
   }
-
-  // Cryptage
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
 });

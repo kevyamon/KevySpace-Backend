@@ -1,11 +1,11 @@
-// src/routes/auth.js
 const express = require('express');
 const { 
   register, 
   login, 
   logout, 
-  getAllUsers, // <--- On importe les nouvelles fonctions
-  deleteUser   // <--- On importe les nouvelles fonctions
+  getAllUsers, 
+  deleteUser,
+  toggleBlockUser // <--- IMPORT
 } = require('../controllers/auth');
 
 const { protect, authorize } = require('../middleware/auth'); 
@@ -18,10 +18,13 @@ router.post('/login', login);
 router.get('/logout', logout);
 
 // --- ROUTES ADMIN (ZONE INTERDITE AUX USERS) ---
-// 1. Voir la liste des utilisateurs
+// 1. Voir la liste
 router.get('/users', protect, authorize('admin'), getAllUsers);
 
-// 2. Bannir/Supprimer un utilisateur
+// 2. Bloquer/Débloquer (Nouveau)
+router.put('/users/:id/block', protect, authorize('admin'), toggleBlockUser);
+
+// 3. Bannir définitivement
 router.delete('/users/:id', protect, authorize('admin'), deleteUser);
 
 module.exports = router;

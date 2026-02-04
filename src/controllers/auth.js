@@ -1,4 +1,3 @@
-// src/controllers/auth.js
 const User = require('../models/User');
 
 // --- UTILITAIRE : Envoyer le Token ---
@@ -34,7 +33,6 @@ exports.register = async (req, res, next) => {
   try {
     const { name, email, password, phone } = req.body;
 
-    // Admin automatique si c'est ton email
     const role = email === process.env.ADMIN_MAIL ? 'admin' : 'user';
 
     const user = await User.create({
@@ -48,9 +46,6 @@ exports.register = async (req, res, next) => {
     sendTokenResponse(user, 201, res);
   } catch (err) {
     let message = err.message;
-
-    // GESTION INTELLIGENTE DES DOUBLONS (Code MongoDB 11000)
-    // C'est TA partie importante qu'on garde précieusement
     if (err.code === 11000) {
       if (err.keyPattern.email) {
         message = "Cet email est déjà utilisé.";
@@ -58,11 +53,7 @@ exports.register = async (req, res, next) => {
         message = "Ce numéro de téléphone est déjà utilisé par un autre compte.";
       }
     }
-
-    res.status(400).json({
-      success: false,
-      error: message
-    });
+    res.status(400).json({ success: false, error: message });
   }
 };
 
@@ -81,6 +72,15 @@ exports.login = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ success: false, error: 'Identifiants invalides' });
     }
+
+    // --- SÉCURITÉ BLOCAGE ---
+    if (user.isBlocked) {
+      return res.status(403).json({ 
+        success: false, 
+        error: "Votre compte est temporairement suspendu. Contactez l'administrateur." 
+      });
+    }
+    // ------------------------
 
     const isMatch = await user.matchPassword(password);
 
@@ -101,49 +101,49 @@ exports.logout = async (req, res, next) => {
     expires: new Date(Date.now() + 10 * 1000), 
     httpOnly: true
   });
-
-  res.status(200).json({
-    success: true,
-    data: {}
-  });
+  res.status(200).json({ success: true, data: {} });
 };
 
 // ==========================================
-// 👇 NOUVELLES FONCTIONS ADMIN (AJOUTÉES) 👇
+// 👇 FONCTIONS ADMIN (GOD MODE) 👇
 // ==========================================
 
-// @desc    Voir tous les utilisateurs (ADMIN SEULEMENT)
+// @desc    Voir tous les utilisateurs
 // @route   GET /api/auth/users
 exports.getAllUsers = async (req, res, next) => {
   try {
-    const users = await User.find(); // Récupère tout le monde
-    res.status(200).json({
-      success: true,
-      count: users.length,
-      data: users
-    });
+    const users = await User.find();
+    res.status(200).json({ success: true, count: users.length, data: users });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: "Erreur serveur lors de la récupération des utilisateurs"
-    });
+    res.status(500).json({ success: false, error: "Erreur serveur" });
   }
 };
 
-// @desc    Supprimer un utilisateur (ADMIN SEULEMENT)
+// @desc    Supprimer un utilisateur
 // @route   DELETE /api/auth/users/:id
 exports.deleteUser = async (req, res, next) => {
   try {
     await User.findByIdAndDelete(req.params.id);
-    
-    res.status(200).json({
-      success: true,
-      data: {}
-    });
+    res.status(200).json({ success: true, data: {} });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: "Impossible de supprimer l'utilisateur"
-    });
+    res.status(500).json({ success: false, error: "Impossible de supprimer" });
+  }
+};
+
+// @desc    Bloquer/Débloquer un utilisateur
+// @route   PUT /api/auth/users/:id/block
+exports.toggleBlockUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "Utilisateur non trouvé" });
+    }
+    // On inverse l'état
+    user.isBlocked = !user.isBlocked;
+    await user.save();
+    
+    res.status(200).json({ success: true, data: user });
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Erreur serveur" });
   }
 };
