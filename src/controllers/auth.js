@@ -32,26 +32,15 @@ const sendTokenResponse = (user, statusCode, res) => {
 exports.register = async (req, res, next) => {
   try {
     const { name, email, password, phone } = req.body;
-
     const role = email === process.env.ADMIN_MAIL ? 'admin' : 'user';
 
-    const user = await User.create({
-      name,
-      email,
-      password,
-      phone,
-      role
-    });
-
+    const user = await User.create({ name, email, password, phone, role });
     sendTokenResponse(user, 201, res);
   } catch (err) {
     let message = err.message;
     if (err.code === 11000) {
-      if (err.keyPattern.email) {
-        message = "Cet email est déjà utilisé.";
-      } else if (err.keyPattern.phone) {
-        message = "Ce numéro de téléphone est déjà utilisé par un autre compte.";
-      }
+      if (err.keyPattern.email) message = "Cet email est déjà utilisé.";
+      else if (err.keyPattern.phone) message = "Ce numéro de téléphone est déjà utilisé.";
     }
     res.status(400).json({ success: false, error: message });
   }
@@ -62,30 +51,15 @@ exports.register = async (req, res, next) => {
 exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ success: false, error: 'Veuillez fournir un email et un mot de passe' });
-    }
+    if (!email || !password) return res.status(400).json({ success: false, error: 'Veuillez fournir email et mot de passe' });
 
     const user = await User.findOne({ email }).select('+password');
+    if (!user) return res.status(401).json({ success: false, error: 'Identifiants invalides' });
 
-    if (!user) {
-      return res.status(401).json({ success: false, error: 'Identifiants invalides' });
-    }
-
-    // --- SÉCURITÉ BLOCAGE ---
-    if (user.isBlocked) {
-      return res.status(403).json({ 
-        success: false, 
-        error: "Votre compte est temporairement suspendu. Contactez l'administrateur." 
-      });
-    }
+    if (user.isBlocked) return res.status(403).json({ success: false, error: "Compte suspendu par l'administrateur." });
 
     const isMatch = await user.matchPassword(password);
-
-    if (!isMatch) {
-      return res.status(401).json({ success: false, error: 'Identifiants invalides' });
-    }
+    if (!isMatch) return res.status(401).json({ success: false, error: 'Identifiants invalides' });
 
     sendTokenResponse(user, 200, res);
   } catch (err) {
@@ -94,21 +68,72 @@ exports.login = async (req, res, next) => {
 };
 
 // @desc    Déconnexion
-// @route   GET /api/auth/logout
 exports.logout = async (req, res, next) => {
-  res.cookie('token', 'none', {
-    expires: new Date(Date.now() + 10 * 1000), 
-    httpOnly: true
-  });
+  res.cookie('token', 'none', { expires: new Date(Date.now() + 10 * 1000), httpOnly: true });
   res.status(200).json({ success: true, data: {} });
 };
 
-// ==========================================
-// 👇 FONCTIONS ADMIN (GOD MODE) 👇
-// ==========================================
+// --- FONCTIONS UTILISATEUR CONNECTÉ ---
 
-// @desc    Voir tous les utilisateurs
-// @route   GET /api/auth/users
+// @desc    Historique
+exports.getHistory = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.id).populate({
+      path: 'watchHistory.video',
+      select: 'title description thumbnailUrl views createdAt user likes comments',
+      populate: { path: 'user', select: 'name avatar' }
+    });
+    const validHistory = user.watchHistory.filter(item => item.video !== null);
+    res.status(200).json({ success: true, count: validHistory.length, data: validHistory });
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Erreur serveur" });
+  }
+};
+
+// @desc    Mise à jour infos (Nom, Email, Tel)
+exports.updateDetails = async (req, res, next) => {
+  try {
+    const fieldsToUpdate = {
+      name: req.body.name,
+      email: req.body.email,
+      phone: req.body.phone
+    };
+    const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, { new: true, runValidators: true });
+    res.status(200).json({ success: true, data: user });
+  } catch (err) {
+    let message = err.message;
+    if (err.code === 11000) message = "Email ou téléphone déjà utilisé.";
+    res.status(400).json({ success: false, error: message });
+  }
+};
+
+// @desc    Mise à jour Mot de Passe
+// @route   PUT /api/auth/updatepassword
+exports.updatePassword = async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    // 1. On récupère le user avec son password hashé
+    const user = await User.findById(req.user.id).select('+password');
+
+    // 2. On vérifie l'ancien mot de passe
+    if (!(await user.matchPassword(currentPassword))) {
+      return res.status(401).json({ success: false, error: "Le mot de passe actuel est incorrect" });
+    }
+
+    // 3. On met le nouveau (le hook 'pre save' va le hasher)
+    user.password = newPassword;
+    await user.save();
+
+    // 4. On renvoie un token frais
+    sendTokenResponse(user, 200, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Erreur serveur" });
+  }
+};
+
+// --- FONCTIONS ADMIN ---
+
 exports.getAllUsers = async (req, res, next) => {
   try {
     const users = await User.find();
@@ -118,8 +143,6 @@ exports.getAllUsers = async (req, res, next) => {
   }
 };
 
-// @desc    Supprimer un utilisateur
-// @route   DELETE /api/auth/users/:id
 exports.deleteUser = async (req, res, next) => {
   try {
     await User.findByIdAndDelete(req.params.id);
@@ -129,84 +152,14 @@ exports.deleteUser = async (req, res, next) => {
   }
 };
 
-// @desc    Bloquer/Débloquer un utilisateur
-// @route   PUT /api/auth/users/:id/block
 exports.toggleBlockUser = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user) {
-      return res.status(404).json({ success: false, error: "Utilisateur non trouvé" });
-    }
-    // On inverse l'état
+    if (!user) return res.status(404).json({ success: false, error: "Utilisateur non trouvé" });
     user.isBlocked = !user.isBlocked;
     await user.save();
-    
     res.status(200).json({ success: true, data: user });
   } catch (err) {
     res.status(500).json({ success: false, error: "Erreur serveur" });
-  }
-};
-
-// ==========================================
-// 👇 FONCTION HISTORIQUE 👇
-// ==========================================
-
-// @desc    Obtenir l'historique de visionnage
-// @route   GET /api/auth/history
-// @access  Privé
-exports.getHistory = async (req, res, next) => {
-  try {
-    // On récupère l'user connecté et on "populate" son historique
-    const user = await User.findById(req.user.id).populate({
-      path: 'watchHistory.video',
-      // On sélectionne les champs importants de la vidéo à afficher
-      select: 'title description thumbnailUrl views createdAt user likes comments', 
-      // On peut même populer l'auteur de la vidéo si besoin
-      populate: { path: 'user', select: 'name avatar' } 
-    });
-
-    // Nettoyage : Si une vidéo a été supprimée de la DB, elle apparaîtra comme null dans l'historique
-    const validHistory = user.watchHistory.filter(item => item.video !== null);
-
-    res.status(200).json({
-      success: true,
-      count: validHistory.length,
-      data: validHistory
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: "Erreur lors de la récupération de l'historique" });
-  }
-};
-
-// ==========================================
-// 👇 NOUVELLE FONCTION MISE À JOUR 👇
-// ==========================================
-
-// @desc    Mettre à jour ses propres informations
-// @route   PUT /api/auth/updatedetails
-// @access  Privé
-exports.updateDetails = async (req, res, next) => {
-  try {
-    const fieldsToUpdate = {
-      name: req.body.name,
-      email: req.body.email,
-      phone: req.body.phone
-    };
-
-    const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, {
-      new: true,
-      runValidators: true
-    });
-
-    res.status(200).json({
-      success: true,
-      data: user
-    });
-  } catch (err) {
-    let message = err.message;
-    if (err.code === 11000) {
-        message = "Cet email ou ce numéro de téléphone est déjà utilisé.";
-    }
-    res.status(400).json({ success: false, error: message });
   }
 };
