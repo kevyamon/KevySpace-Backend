@@ -25,7 +25,7 @@ exports.createResource = async (req, res) => {
       size
     });
 
-    // ⚡ SOCKET : On prévient tout le monde (Public)
+    // ⚡ SOCKET (Public)
     const io = req.app.get('io');
     if (io) io.emit('resource_action', { type: 'add', data: resource });
 
@@ -72,21 +72,27 @@ exports.awardCertificate = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: "Aucun fichier" });
     
+    // CORRECTION ICI : On accepte 'user_id' OU 'user' pour être sûr de choper l'ID
+    const userId = req.body.user_id || req.body.user;
+
+    if (!userId) {
+        return res.status(400).json({ success: false, error: "Utilisateur (user_id) manquant" });
+    }
+
     const certificate = await Certificate.create({
-      user: req.body.user_id, 
+      user: userId, 
       title: req.body.title,
       fileUrl: req.file.path,
       cloudinaryId: req.file.filename
     });
 
     // ⚡ SOCKET : IMPORTANT
-    // On envoie 'certificate.user' pour que le front puisse filtrer
     const io = req.app.get('io');
     if (io) {
       io.emit('certificate_action', { 
         type: 'add', 
         data: certificate, 
-        targetUserId: req.body.user_id // On envoie explicitement l'ID cible
+        targetUserId: userId.toString() // On force en String pour la comparaison frontend
       });
     }
 
@@ -122,19 +128,19 @@ exports.deleteCertificate = async (req, res) => {
     const cert = await Certificate.findById(req.params.id);
     if (!cert) return res.status(404).json({ success: false, error: "Non trouvé" });
 
-    // On garde l'ID de l'user AVANT de supprimer pour le notifier
-    const targetUserId = cert.user;
+    // On garde l'ID et on le convertit en String TOUT DE SUITE
+    const targetUserId = cert.user.toString();
 
     await cloudinary.uploader.destroy(cert.cloudinaryId);
     await cert.deleteOne();
 
-    // ⚡ SOCKET : On prévient l'étudiant qu'on lui a retiré son diplôme
+    // ⚡ SOCKET
     const io = req.app.get('io');
     if (io) {
       io.emit('certificate_action', { 
         type: 'delete', 
         id: req.params.id, 
-        targetUserId: targetUserId // L'ID cible
+        targetUserId: targetUserId // String garantie
       });
     }
 
