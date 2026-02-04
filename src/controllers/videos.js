@@ -5,7 +5,6 @@ const { cloudinary } = require('../config/cloudinary');
 
 // @desc    Récupérer toutes les vidéos
 // @route   GET /api/videos
-// @access  Privé
 exports.getVideos = async (req, res, next) => {
   try {
     const videos = await Video.find().sort({ createdAt: -1 }).populate('user', 'name avatar');
@@ -22,12 +21,11 @@ exports.getVideos = async (req, res, next) => {
 
 // @desc    Récupérer une seule vidéo
 // @route   GET /api/videos/:id
-// @access  Privé
 exports.getVideo = async (req, res, next) => {
   try {
     const video = await Video.findById(req.params.id)
       .populate('user', 'name avatar')
-      .populate('comments.user', 'name avatar');
+      .populate('comments.user', 'name avatar'); // IMPORTANT: Pour voir les auteurs des coms
 
     if (!video) {
       return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
@@ -42,9 +40,8 @@ exports.getVideo = async (req, res, next) => {
   }
 };
 
-// @desc    Créer une vidéo (ADMIN + UPLOAD CLOUDINARY)
+// @desc    Créer une vidéo (ADMIN)
 // @route   POST /api/videos
-// @access  Privé (Admin)
 exports.createVideo = async (req, res, next) => {
   try {
     if (!req.file) {
@@ -62,7 +59,6 @@ exports.createVideo = async (req, res, next) => {
 
     const video = await Video.create(videoData);
 
-    // Socket.io
     const io = req.app.get('io');
     io.emit('video_added', video);
 
@@ -80,7 +76,6 @@ exports.createVideo = async (req, res, next) => {
 
 // @desc    Supprimer une vidéo
 // @route   DELETE /api/videos/:id
-// @access  Privé (Admin)
 exports.deleteVideo = async (req, res, next) => {
   try {
     const video = await Video.findById(req.params.id);
@@ -109,7 +104,6 @@ exports.deleteVideo = async (req, res, next) => {
 
 // @desc    Liker / Unliker une vidéo
 // @route   PUT /api/videos/:id/like
-// @access  Privé
 exports.likeVideo = async (req, res, next) => {
   try {
     const video = await Video.findById(req.params.id);
@@ -118,14 +112,11 @@ exports.likeVideo = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
     }
 
-    // Vérifier si déjà liké
     const index = video.likes.findIndex(userId => userId.toString() === req.user.id);
 
     if (index === -1) {
-      // Pas encore liké -> On ajoute
       video.likes.push(req.user.id);
     } else {
-      // Déjà liké -> On retire (Toggle)
       video.likes.splice(index, 1);
     }
 
@@ -145,7 +136,6 @@ exports.likeVideo = async (req, res, next) => {
 
 // @desc    Ajouter un commentaire
 // @route   POST /api/videos/:id/comment
-// @access  Privé
 exports.commentVideo = async (req, res, next) => {
   try {
     const video = await Video.findById(req.params.id);
@@ -154,19 +144,19 @@ exports.commentVideo = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
     }
 
+    // On force la date ici au cas où le modèle n'est pas encore mis à jour
     const newComment = {
       user: req.user.id,
       text: req.body.text,
       name: req.user.name,
-      avatar: req.user.avatar
+      avatar: req.user.avatar,
+      createdAt: new Date() 
     };
 
-    // Ajout au début du tableau
     video.comments.unshift(newComment);
-
     await video.save();
     
-    // On repopulate pour renvoyer l'objet complet (avec avatar à jour)
+    // CRUCIAL : On peuple l'utilisateur pour que le front puisse comparer les IDs
     await video.populate('comments.user', 'name avatar');
 
     const io = req.app.get('io');
@@ -183,22 +173,18 @@ exports.commentVideo = async (req, res, next) => {
 
 // @desc    Supprimer un commentaire
 // @route   DELETE /api/videos/:id/comment/:commentId
-// @access  Privé
 exports.deleteComment = async (req, res, next) => {
   try {
     const video = await Video.findById(req.params.id);
     if (!video) return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
 
-    // Trouver le commentaire
     const comment = video.comments.id(req.params.commentId);
     if (!comment) return res.status(404).json({ success: false, error: 'Commentaire introuvable' });
 
-    // Vérifier l'appartenance (Ou admin)
     if (comment.user.toString() !== req.user.id && req.user.role !== 'admin') {
       return res.status(401).json({ success: false, error: 'Non autorisé' });
     }
 
-    // Suppression
     comment.deleteOne();
     await video.save();
     await video.populate('comments.user', 'name avatar');
@@ -214,7 +200,6 @@ exports.deleteComment = async (req, res, next) => {
 
 // @desc    Modifier un commentaire
 // @route   PUT /api/videos/:id/comment/:commentId
-// @access  Privé
 exports.updateComment = async (req, res, next) => {
   try {
     const { text } = req.body;
@@ -224,7 +209,6 @@ exports.updateComment = async (req, res, next) => {
     const comment = video.comments.id(req.params.commentId);
     if (!comment) return res.status(404).json({ success: false, error: 'Commentaire introuvable' });
 
-    // Vérifier l'appartenance
     if (comment.user.toString() !== req.user.id) {
       return res.status(401).json({ success: false, error: 'Non autorisé' });
     }
@@ -242,12 +226,10 @@ exports.updateComment = async (req, res, next) => {
   }
 };
 
-// @desc    Incrémenter les vues ET Ajouter à l'historique
+// @desc    Incrémenter les vues
 // @route   PUT /api/videos/:id/view
-// @access  Privé
 exports.viewVideo = async (req, res, next) => {
   try {
-    // 1. Incrémenter le compteur de la vidéo
     const video = await Video.findByIdAndUpdate(
       req.params.id,
       { $inc: { views: 1 } },
@@ -258,7 +240,6 @@ exports.viewVideo = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
     }
 
-    // 2. Ajouter à l'historique de l'utilisateur (Gestion intelligente)
     await User.findByIdAndUpdate(req.user.id, {
       $pull: { watchHistory: { video: req.params.id } }
     });

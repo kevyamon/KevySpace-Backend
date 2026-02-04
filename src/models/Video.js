@@ -1,78 +1,57 @@
+// src/models/Video.js
 const mongoose = require('mongoose');
 
-// --- SOUS-SCHEMA : COMMENTAIRES ---
-// On crée un petit schéma pour les commentaires qui seront imbriqués dans la vidéo
+// Schéma des commentaires (Sous-document)
 const CommentSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
+  name: String,   // On garde le nom en cache pour l'affichage rapide
+  avatar: String, // On garde l'avatar en cache
   text: {
     type: String,
-    required: [true, 'Le commentaire ne peut pas être vide'],
-    trim: true
-  },
-  name: {
-    type: String // On garde le nom pour l'afficher vite sans refaire une requête
-  },
-  avatar: {
-    type: String // Idem pour l'avatar
-  },
-  date: {
-    type: Date,
-    default: Date.now
+    required: [true, 'Veuillez ajouter un commentaire']
   }
-});
+}, { timestamps: true }); // <--- MAGIE ICI : Crée createdAt et updatedAt automatiquement pour chaque commentaire
 
-// --- SCHEMA PRINCIPAL : VIDÉO ---
 const VideoSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
   title: {
     type: String,
-    required: [true, 'Veuillez ajouter un titre à la vidéo'],
+    required: [true, 'Veuillez ajouter un titre'],
     trim: true,
     maxlength: [100, 'Le titre ne peut pas dépasser 100 caractères']
   },
   description: {
     type: String,
-    required: [true, 'Veuillez ajouter une description'],
-    maxlength: [500, 'La description ne peut pas dépasser 500 caractères']
+    maxlength: [5000, 'La description ne peut pas dépasser 5000 caractères']
   },
-  // L'URL de lecture sécurisée venant de Cloudinary
   videoUrl: {
     type: String,
-    required: [true, 'URL de la vidéo manquante']
+    required: [true, 'Veuillez ajouter une vidéo']
   },
-  // L'ID unique Cloudinary (Indispensable pour pouvoir SUPPRIMER la vidéo du cloud plus tard)
-  cloudinaryId: {
-    type: String,
-    required: true
-  },
-  // Une miniature (Générée auto par Cloudinary ou uploadée)
   thumbnailUrl: {
-    type: String
+    type: String,
+    default: 'no-photo.jpg'
   },
-  // Compteur de vues
+  cloudinaryId: String,
   views: {
     type: Number,
     default: 0
   },
-  // Les Likes : On stocke les IDs des utilisateurs qui ont liké
   likes: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
     }
   ],
-  // Les Commentaires (Tableau du schéma défini plus haut)
-  comments: [CommentSchema],
-  
-  // L'auteur (Toi, l'Admin)
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
+  comments: [CommentSchema], // On utilise le schéma défini plus haut
   createdAt: {
     type: Date,
     default: Date.now
