@@ -8,12 +8,7 @@ const { cloudinary } = require('../config/cloudinary');
 exports.getVideos = async (req, res, next) => {
   try {
     const videos = await Video.find().sort({ createdAt: -1 }).populate('user', 'name avatar');
-
-    res.status(200).json({
-      success: true,
-      count: videos.length,
-      data: videos
-    });
+    res.status(200).json({ success: true, count: videos.length, data: videos });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Erreur serveur' });
   }
@@ -25,16 +20,11 @@ exports.getVideo = async (req, res, next) => {
   try {
     const video = await Video.findById(req.params.id)
       .populate('user', 'name avatar')
-      .populate('comments.user', 'name avatar'); // IMPORTANT: Pour voir les auteurs des coms
+      .populate('comments.user', 'name avatar');
 
-    if (!video) {
-      return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
-    }
+    if (!video) return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
 
-    res.status(200).json({
-      success: true,
-      data: video
-    });
+    res.status(200).json({ success: true, data: video });
   } catch (err) {
     res.status(400).json({ success: false, error: 'ID Vidéo invalide' });
   }
@@ -44,28 +34,17 @@ exports.getVideo = async (req, res, next) => {
 // @route   POST /api/videos
 exports.createVideo = async (req, res, next) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: 'Veuillez uploader une vidéo' });
-    }
+    if (!req.file) return res.status(400).json({ success: false, error: 'Veuillez uploader une vidéo' });
 
     const { path, filename } = req.file;
-
-    const videoData = {
-      ...req.body,
-      videoUrl: path,
-      cloudinaryId: filename,
-      user: req.user.id
-    };
+    const videoData = { ...req.body, videoUrl: path, cloudinaryId: filename, user: req.user.id };
 
     const video = await Video.create(videoData);
 
     const io = req.app.get('io');
     io.emit('video_added', video);
 
-    res.status(201).json({
-      success: true,
-      data: video
-    });
+    res.status(201).json({ success: true, data: video });
   } catch (err) {
     if (req.file && req.file.filename) {
         await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'video' });
@@ -79,99 +58,73 @@ exports.createVideo = async (req, res, next) => {
 exports.deleteVideo = async (req, res, next) => {
   try {
     const video = await Video.findById(req.params.id);
+    if (!video) return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
 
-    if (!video) {
-      return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
-    }
-
-    if (video.cloudinaryId) {
-        await cloudinary.uploader.destroy(video.cloudinaryId, { resource_type: 'video' });
-    }
+    if (video.cloudinaryId) await cloudinary.uploader.destroy(video.cloudinaryId, { resource_type: 'video' });
 
     await video.deleteOne();
 
     const io = req.app.get('io');
     io.emit('video_deleted', req.params.id);
 
-    res.status(200).json({
-      success: true,
-      data: {}
-    });
+    res.status(200).json({ success: true, data: {} });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
 };
 
-// @desc    Liker / Unliker une vidéo
+// @desc    Liker / Unliker
 // @route   PUT /api/videos/:id/like
 exports.likeVideo = async (req, res, next) => {
   try {
     const video = await Video.findById(req.params.id);
-
-    if (!video) {
-      return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
-    }
+    if (!video) return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
 
     const index = video.likes.findIndex(userId => userId.toString() === req.user.id);
-
-    if (index === -1) {
-      video.likes.push(req.user.id);
-    } else {
-      video.likes.splice(index, 1);
-    }
+    if (index === -1) video.likes.push(req.user.id);
+    else video.likes.splice(index, 1);
 
     await video.save();
 
+    // SOCKET : Diffusion des Likes (Ça marche déjà)
     const io = req.app.get('io');
     io.emit('video_updated', { id: video._id, likes: video.likes });
 
-    res.status(200).json({
-      success: true,
-      data: video.likes
-    });
+    res.status(200).json({ success: true, data: video.likes });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
 };
 
-// @desc    Ajouter un commentaire
+// @desc    Ajouter commentaire
 // @route   POST /api/videos/:id/comment
 exports.commentVideo = async (req, res, next) => {
   try {
     const video = await Video.findById(req.params.id);
+    if (!video) return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
 
-    if (!video) {
-      return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
-    }
-
-    // On force la date ici au cas où le modèle n'est pas encore mis à jour
     const newComment = {
       user: req.user.id,
       text: req.body.text,
       name: req.user.name,
       avatar: req.user.avatar,
-      createdAt: new Date() 
+      createdAt: new Date()
     };
 
     video.comments.unshift(newComment);
     await video.save();
-    
-    // CRUCIAL : On peuple l'utilisateur pour que le front puisse comparer les IDs
     await video.populate('comments.user', 'name avatar');
 
     const io = req.app.get('io');
     io.emit('video_comments_updated', { id: video._id, comments: video.comments });
 
-    res.status(201).json({
-      success: true,
-      data: video.comments
-    });
+    res.status(201).json({ success: true, data: video.comments });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
 };
 
-// @desc    Supprimer un commentaire
+// @desc    Supprimer commentaire
 // @route   DELETE /api/videos/:id/comment/:commentId
 exports.deleteComment = async (req, res, next) => {
   try {
@@ -198,7 +151,7 @@ exports.deleteComment = async (req, res, next) => {
   }
 };
 
-// @desc    Modifier un commentaire
+// @desc    Modifier commentaire
 // @route   PUT /api/videos/:id/comment/:commentId
 exports.updateComment = async (req, res, next) => {
   try {
@@ -236,27 +189,18 @@ exports.viewVideo = async (req, res, next) => {
       { new: true }
     );
 
-    if (!video) {
-      return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
-    }
+    if (!video) return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
 
-    await User.findByIdAndUpdate(req.user.id, {
-      $pull: { watchHistory: { video: req.params.id } }
-    });
+    // Gestion historique
+    await User.findByIdAndUpdate(req.user.id, { $pull: { watchHistory: { video: req.params.id } } });
+    await User.findByIdAndUpdate(req.user.id, { $push: { watchHistory: { $each: [{ video: req.params.id, watchedAt: Date.now() }], $position: 0 } } });
 
-    await User.findByIdAndUpdate(req.user.id, {
-      $push: {
-        watchHistory: {
-          $each: [{ video: req.params.id, watchedAt: Date.now() }],
-          $position: 0 
-        }
-      }
-    });
+    // --- ICI : ON COPIE LA LOGIQUE DES LIKES ---
+    // On crie à tout le monde : "Cette vidéo a une nouvelle vue !"
+    const io = req.app.get('io');
+    io.emit('video_viewed', { id: video._id, views: video.views }); 
 
-    res.status(200).json({
-      success: true,
-      data: video
-    });
+    res.status(200).json({ success: true, data: video });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
