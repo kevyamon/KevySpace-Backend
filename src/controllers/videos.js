@@ -1,11 +1,10 @@
-// src/controllers/videos.js
 const Video = require('../models/Video');
-// On importe l'instance cloudinary configurée pour pouvoir supprimer des vidéos
+const User = require('../models/User'); // <--- IMPORTANT : Requis pour l'historique
 const { cloudinary } = require('../config/cloudinary');
 
 // @desc    Récupérer toutes les vidéos
 // @route   GET /api/videos
-// @access  Privé (Utilisateurs connectés)
+// @access  Privé
 exports.getVideos = async (req, res, next) => {
   try {
     const videos = await Video.find().sort({ createdAt: -1 }).populate('user', 'name avatar');
@@ -47,28 +46,22 @@ exports.getVideo = async (req, res, next) => {
 // @access  Privé (Admin)
 exports.createVideo = async (req, res, next) => {
   try {
-    // 1. Vérification : Est-ce qu'un fichier a bien été envoyé ?
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'Veuillez uploader une vidéo' });
     }
 
-    // 2. Récupération des infos envoyées par Cloudinary (via Multer)
-    // req.file.path contient l'URL sécurisée de la vidéo sur le cloud
-    // req.file.filename contient l'ID unique (public_id) nécessaire pour la suppression
     const { path, filename } = req.file;
 
-    // 3. Préparation des données pour la base de données
     const videoData = {
-      ...req.body, // Titre, Description...
-      videoUrl: path, // L'URL Cloudinary
-      cloudinaryId: filename, // L'ID Cloudinary
-      user: req.user.id // L'Admin connecté
+      ...req.body,
+      videoUrl: path,
+      cloudinaryId: filename,
+      user: req.user.id
     };
 
-    // 4. Création en base
     const video = await Video.create(videoData);
 
-    // --- TEMPS RÉEL (SOCKET.IO) ---
+    // Socket.io
     const io = req.app.get('io');
     io.emit('video_added', video);
 
@@ -77,7 +70,6 @@ exports.createVideo = async (req, res, next) => {
       data: video
     });
   } catch (err) {
-    // Si ça plante, on essaie de nettoyer (supprimer la vidéo uploadée pour rien) si possible
     if (req.file && req.file.filename) {
         await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'video' });
     }
@@ -85,7 +77,7 @@ exports.createVideo = async (req, res, next) => {
   }
 };
 
-// @desc    Supprimer une vidéo (DB + CLOUDINARY)
+// @desc    Supprimer une vidéo
 // @route   DELETE /api/videos/:id
 // @access  Privé (Admin)
 exports.deleteVideo = async (req, res, next) => {
@@ -96,15 +88,12 @@ exports.deleteVideo = async (req, res, next) => {
       return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
     }
 
-    // 1. Suppression du fichier sur Cloudinary
     if (video.cloudinaryId) {
         await cloudinary.uploader.destroy(video.cloudinaryId, { resource_type: 'video' });
     }
 
-    // 2. Suppression de la base de données
     await video.deleteOne();
 
-    // --- TEMPS RÉEL ---
     const io = req.app.get('io');
     io.emit('video_deleted', req.params.id);
 
@@ -184,11 +173,12 @@ exports.commentVideo = async (req, res, next) => {
   }
 };
 
-// @desc    Incrémenter le nombre de vues
+// @desc    Incrémenter les vues ET Ajouter à l'historique
 // @route   PUT /api/videos/:id/view
 // @access  Privé
 exports.viewVideo = async (req, res, next) => {
   try {
+    // 1. Incrémenter le compteur de la vidéo
     const video = await Video.findByIdAndUpdate(
       req.params.id,
       { $inc: { views: 1 } },
@@ -198,6 +188,22 @@ exports.viewVideo = async (req, res, next) => {
     if (!video) {
       return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
     }
+
+    // 2. Ajouter à l'historique de l'utilisateur (Gestion intelligente)
+    // On retire d'abord la vidéo si elle existe déjà (pour éviter les doublons)
+    await User.findByIdAndUpdate(req.user.id, {
+      $pull: { watchHistory: { video: req.params.id } }
+    });
+
+    // On la réinsère en HAUT de la liste (position 0) avec la date actuelle
+    await User.findByIdAndUpdate(req.user.id, {
+      $push: {
+        watchHistory: {
+          $each: [{ video: req.params.id, watchedAt: Date.now() }],
+          $position: 0 
+        }
+      }
+    });
 
     res.status(200).json({
       success: true,

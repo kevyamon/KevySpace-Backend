@@ -1,3 +1,4 @@
+// src/models/User.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -29,11 +30,23 @@ const UserSchema = new mongoose.Schema({
     enum: ['user', 'admin'],
     default: 'user'
   },
-  // NOUVEAU CHAMP : BLOCAGE
   isBlocked: {
     type: Boolean,
     default: false
   },
+  // --- NOUVEAU : HISTORIQUE DE VISIONNAGE ---
+  watchHistory: [
+    {
+      video: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Video'
+      },
+      watchedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  ],
   password: {
     type: String,
     required: [true, 'Veuillez ajouter un mot de passe'],
@@ -52,7 +65,6 @@ const UserSchema = new mongoose.Schema({
   resetPasswordExpire: Date
 });
 
-// --- HACHAGE MOT DE PASSE ---
 UserSchema.pre('save', async function() {
   if (!this.isModified('password')) {
     return;
@@ -61,7 +73,6 @@ UserSchema.pre('save', async function() {
   this.password = await bcrypt.hash(this.password, salt);
 });
 
-// --- MÉTHODES ---
 UserSchema.methods.getSignedJwtToken = function() {
   return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
     expiresIn: '30d'

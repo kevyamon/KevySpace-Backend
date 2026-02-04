@@ -80,7 +80,6 @@ exports.login = async (req, res, next) => {
         error: "Votre compte est temporairement suspendu. Contactez l'administrateur." 
       });
     }
-    // ------------------------
 
     const isMatch = await user.matchPassword(password);
 
@@ -145,5 +144,37 @@ exports.toggleBlockUser = async (req, res, next) => {
     res.status(200).json({ success: true, data: user });
   } catch (err) {
     res.status(500).json({ success: false, error: "Erreur serveur" });
+  }
+};
+
+// ==========================================
+// 👇 NOUVELLE FONCTION HISTORIQUE 👇
+// ==========================================
+
+// @desc    Obtenir l'historique de visionnage
+// @route   GET /api/auth/history
+// @access  Privé
+exports.getHistory = async (req, res, next) => {
+  try {
+    // On récupère l'user connecté et on "populate" son historique
+    const user = await User.findById(req.user.id).populate({
+      path: 'watchHistory.video',
+      // On sélectionne les champs importants de la vidéo à afficher
+      select: 'title description thumbnailUrl views createdAt user likes comments', 
+      // On peut même populer l'auteur de la vidéo si besoin
+      populate: { path: 'user', select: 'name avatar' } 
+    });
+
+    // Nettoyage : Si une vidéo a été supprimée de la DB, elle apparaîtra comme null dans l'historique
+    // On filtre pour ne garder que les entrées valides
+    const validHistory = user.watchHistory.filter(item => item.video !== null);
+
+    res.status(200).json({
+      success: true,
+      count: validHistory.length,
+      data: validHistory
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Erreur lors de la récupération de l'historique" });
   }
 };
