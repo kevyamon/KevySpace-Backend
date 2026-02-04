@@ -19,7 +19,6 @@ const UserSchema = new mongoose.Schema({
       'Veuillez ajouter un email valide'
     ]
   },
-  // NOUVEAU CHAMP : TÉLÉPHONE
   phone: {
     type: String,
     required: [true, 'Veuillez ajouter un numéro de téléphone'],
@@ -48,14 +47,17 @@ const UserSchema = new mongoose.Schema({
   resetPasswordExpire: Date
 });
 
-// --- MIDDLEWARE MONGOOSE ---
-UserSchema.pre('save', async function(next) {
+// --- CORRECTION DU BUG "next is not a function" ---
+// On retire le paramètre 'next' et on laisse Mongoose gérer la Promesse (Async/Await pur)
+UserSchema.pre('save', async function() {
+  // Si le mot de passe n'a pas changé, on ne fait rien et on sort direct
   if (!this.isModified('password')) {
-    next();
+    return;
   }
+
+  // Cryptage
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
-  next();
 });
 
 // --- MÉTHODES ---
