@@ -1,3 +1,4 @@
+// src/app.js
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -7,6 +8,7 @@ const cookieParser = require('cookie-parser');
 // Import des fichiers de routes
 const auth = require('./routes/auth');
 const videos = require('./routes/videos');
+const assets = require('./routes/assets'); // <--- 1. NOUVEL IMPORT AJOUTÉ
 
 const app = express();
 
@@ -29,7 +31,6 @@ app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // 5. Nettoyage des données (ULTIMATE SANITIZER : NoSQL + XSS)
-// Cette fonction remplace mongoSanitize ET xss-clean qui plantent sur Render.
 app.use((req, res, next) => {
     const sanitize = (obj) => {
         if (!obj) return;
@@ -42,12 +43,11 @@ app.use((req, res, next) => {
             
             // B. Protection XSS (Anti-Script HTML)
             if (typeof obj[key] === 'string') {
-                // On remplace les chevrons < et > pour empêcher les scripts de s'exécuter
                 obj[key] = obj[key]
                     .replace(/</g, "&lt;")
                     .replace(/>/g, "&gt;");
             } 
-            // C. Récursivité (On descend dans les sous-objets)
+            // C. Récursivité
             else if (typeof obj[key] === 'object' && obj[key] !== null) {
                 sanitize(obj[key]);
             }
@@ -68,6 +68,7 @@ app.use(hpp()); // Prévient la pollution des paramètres HTTP
 // --- MONTAGE DES ROUTES ---
 app.use('/api/auth', auth);
 app.use('/api/videos', videos);
+app.use('/api', assets); // <--- 2. NOUVELLE ROUTE ACTIVÉE (Ressources & Certifs)
 
 // --- ROUTE DE TEST ---
 app.get('/', (req, res) => {
