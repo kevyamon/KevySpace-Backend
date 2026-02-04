@@ -1,4 +1,3 @@
-// src/controllers/auth.js
 const User = require('../models/User');
 
 // --- UTILITAIRE : Envoyer le Token ---
@@ -157,12 +156,16 @@ exports.toggleBlockUser = async (req, res, next) => {
 // @access  Privé
 exports.getHistory = async (req, res, next) => {
   try {
+    // On récupère l'user connecté et on "populate" son historique
     const user = await User.findById(req.user.id).populate({
       path: 'watchHistory.video',
+      // On sélectionne les champs importants de la vidéo à afficher
       select: 'title description thumbnailUrl views createdAt user likes comments', 
+      // On peut même populer l'auteur de la vidéo si besoin
       populate: { path: 'user', select: 'name avatar' } 
     });
 
+    // Nettoyage : Si une vidéo a été supprimée de la DB, elle apparaîtra comme null dans l'historique
     const validHistory = user.watchHistory.filter(item => item.video !== null);
 
     res.status(200).json({
@@ -176,7 +179,7 @@ exports.getHistory = async (req, res, next) => {
 };
 
 // ==========================================
-// 👇 NOUVELLE FONCTION MISE À JOUR PROFIL 👇
+// 👇 NOUVELLE FONCTION MISE À JOUR 👇
 // ==========================================
 
 // @desc    Mettre à jour ses propres informations

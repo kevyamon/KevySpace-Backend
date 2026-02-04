@@ -1,4 +1,3 @@
-// src/routes/auth.js
 const express = require('express');
 const { 
   register, 
@@ -8,24 +7,26 @@ const {
   deleteUser,
   toggleBlockUser,
   getHistory,
-  updateDetails // <--- NOUVEL IMPORT
+  updateDetails // <--- 1. IMPORT AJOUTÉ
 } = require('../controllers/auth');
 
 const { protect, authorize } = require('../middleware/auth'); 
 
 const router = express.Router();
 
+// Routes Publiques
 router.post('/register', register);
 router.post('/login', login);
 router.get('/logout', logout);
 
-// Route Historique
+// --- ROUTES UTILISATEUR CONNECTÉ ---
+// Historique
 router.get('/history', protect, getHistory);
 
-// Route Mise à jour Profil (NOUVEAU)
+// Mise à jour profil (CELLE QUI MANQUAIT POUR L'ERREUR 404)
 router.put('/updatedetails', protect, updateDetails);
 
-// Routes Admin
+// --- ROUTES ADMIN (ZONE INTERDITE AUX USERS) ---
 router.get('/users', protect, authorize('admin'), getAllUsers);
 router.put('/users/:id/block', protect, authorize('admin'), toggleBlockUser);
 router.delete('/users/:id', protect, authorize('admin'), deleteUser);
