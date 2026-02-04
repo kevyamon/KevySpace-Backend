@@ -1,3 +1,4 @@
+// src/controllers/auth.js
 const User = require('../models/User');
 
 // --- UTILITAIRE : Envoyer le Token ---
@@ -49,6 +50,7 @@ exports.register = async (req, res, next) => {
     let message = err.message;
 
     // GESTION INTELLIGENTE DES DOUBLONS (Code MongoDB 11000)
+    // C'est TA partie importante qu'on garde précieusement
     if (err.code === 11000) {
       if (err.keyPattern.email) {
         message = "Cet email est déjà utilisé.";
@@ -104,4 +106,44 @@ exports.logout = async (req, res, next) => {
     success: true,
     data: {}
   });
+};
+
+// ==========================================
+// 👇 NOUVELLES FONCTIONS ADMIN (AJOUTÉES) 👇
+// ==========================================
+
+// @desc    Voir tous les utilisateurs (ADMIN SEULEMENT)
+// @route   GET /api/auth/users
+exports.getAllUsers = async (req, res, next) => {
+  try {
+    const users = await User.find(); // Récupère tout le monde
+    res.status(200).json({
+      success: true,
+      count: users.length,
+      data: users
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: "Erreur serveur lors de la récupération des utilisateurs"
+    });
+  }
+};
+
+// @desc    Supprimer un utilisateur (ADMIN SEULEMENT)
+// @route   DELETE /api/auth/users/:id
+exports.deleteUser = async (req, res, next) => {
+  try {
+    await User.findByIdAndDelete(req.params.id);
+    
+    res.status(200).json({
+      success: true,
+      data: {}
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: "Impossible de supprimer l'utilisateur"
+    });
+  }
 };
