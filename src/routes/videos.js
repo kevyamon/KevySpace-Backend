@@ -7,7 +7,9 @@ const {
     deleteVideo, 
     likeVideo, 
     commentVideo,
-    viewVideo // <--- AJOUT
+    deleteComment, // <--- NOUVEAU
+    updateComment, // <--- NOUVEAU
+    viewVideo
 } = require('../controllers/videos');
 
 // On importe les vigiles (Protection et Rôles)
@@ -40,7 +42,11 @@ router
 
 // Routes d'interaction
 router.put('/:id/like', likeVideo); // Liker
-router.post('/:id/comment', commentVideo); // Commenter
 router.put('/:id/view', viewVideo); // Voir (Compteur vues)
+
+// Routes Commentaires
+router.post('/:id/comment', commentVideo); // Ajouter
+router.delete('/:id/comment/:commentId', deleteComment); // Supprimer (Propriétaire ou Admin)
+router.put('/:id/comment/:commentId', updateComment); // Modifier (Propriétaire)
 
 module.exports = router;
