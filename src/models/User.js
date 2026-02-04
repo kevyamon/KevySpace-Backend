@@ -1,3 +1,4 @@
+// src/models/User.js
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -18,6 +19,12 @@ const UserSchema = new mongoose.Schema({
       'Veuillez ajouter un email valide'
     ]
   },
+  // NOUVEAU CHAMP : TÉLÉPHONE
+  phone: {
+    type: String,
+    required: [true, 'Veuillez ajouter un numéro de téléphone'],
+    trim: true
+  },
   role: {
     type: String,
     enum: ['user', 'admin'],
@@ -27,47 +34,37 @@ const UserSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Veuillez ajouter un mot de passe'],
     minlength: [6, 'Le mot de passe doit contenir au moins 6 caractères'],
-    select: false // Sécurité : Ne jamais renvoyer le mot de passe lors d'une requête GET
+    select: false 
   },
   avatar: {
     type: String,
-    default: 'no-photo.jpg' // On gérera l'avatar par défaut côté Frontend ou via Cloudinary plus tard
+    default: 'no-photo.jpg'
   },
   createdAt: {
     type: Date,
     default: Date.now
   },
-  // Champs pour la récupération de mot de passe (futur)
   resetPasswordToken: String,
   resetPasswordExpire: Date
 });
 
 // --- MIDDLEWARE MONGOOSE ---
-
-// 1. Crypter le mot de passe avec Bcrypt avant de sauvegarder
 UserSchema.pre('save', async function(next) {
-  // Si le mot de passe n'a pas été modifié, on passe (pour éviter de le re-crypter)
   if (!this.isModified('password')) {
     next();
   }
-
-  // Génération du "Salt" (grain de sel) niveau 10
   const salt = await bcrypt.genSalt(10);
-  // Hachage du mot de passe
   this.password = await bcrypt.hash(this.password, salt);
   next();
 });
 
-// --- MÉTHODES PERSONNALISÉES ---
-
-// 2. Signer le JWT (Créer le token d'identité)
+// --- MÉTHODES ---
 UserSchema.methods.getSignedJwtToken = function() {
   return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
-    expiresIn: '30d' // Le token expire dans 30 jours
+    expiresIn: '30d'
   });
 };
 
-// 3. Vérifier le mot de passe (Lors du Login)
 UserSchema.methods.matchPassword = async function(enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
