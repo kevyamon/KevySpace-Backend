@@ -1,13 +1,13 @@
-// src/controllers/auth.js
 const User = require('../models/User');
 
+// --- UTILITAIRE : Envoyer le Token ---
 const sendTokenResponse = (user, statusCode, res) => {
   const token = user.getSignedJwtToken();
 
   const options = {
-    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), 
-    httpOnly: true, 
-    secure: process.env.NODE_ENV === 'production' 
+    expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 jours
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production'
   };
 
   res
@@ -20,38 +20,51 @@ const sendTokenResponse = (user, statusCode, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        phone: user.phone, // On renvoie aussi le numéro
+        phone: user.phone,
         role: user.role,
         avatar: user.avatar
       }
     });
 };
 
+// @desc    Inscrire un nouvel utilisateur
 // @route   POST /api/auth/register
 exports.register = async (req, res, next) => {
   try {
-    // ON AJOUTE 'phone' ICI 👇
     const { name, email, password, phone } = req.body;
 
+    // Admin automatique si c'est ton email
     const role = email === process.env.ADMIN_MAIL ? 'admin' : 'user';
 
     const user = await User.create({
       name,
       email,
       password,
-      phone, // ET LÀ 👇
+      phone,
       role
     });
 
     sendTokenResponse(user, 201, res);
   } catch (err) {
+    let message = err.message;
+
+    // GESTION INTELLIGENTE DES DOUBLONS (Code MongoDB 11000)
+    if (err.code === 11000) {
+      if (err.keyPattern.email) {
+        message = "Cet email est déjà utilisé.";
+      } else if (err.keyPattern.phone) {
+        message = "Ce numéro de téléphone est déjà utilisé par un autre compte.";
+      }
+    }
+
     res.status(400).json({
       success: false,
-      error: err.message
+      error: message
     });
   }
 };
 
+// @desc    Connecter un utilisateur
 // @route   POST /api/auth/login
 exports.login = async (req, res, next) => {
   try {
@@ -79,6 +92,7 @@ exports.login = async (req, res, next) => {
   }
 };
 
+// @desc    Déconnexion
 // @route   GET /api/auth/logout
 exports.logout = async (req, res, next) => {
   res.cookie('token', 'none', {
