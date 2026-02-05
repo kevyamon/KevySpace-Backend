@@ -37,8 +37,7 @@ exports.createVideo = async (req, res, next) => {
     // 1. Vérification du fichier
     if (!req.file) return res.status(400).json({ success: false, error: 'Veuillez uploader un fichier vidéo' });
 
-    // 2. Vérification des champs obligatoires (CORRECTIF ICI)
-    // Souvent l'erreur vient du fait qu'on envoie le fichier mais que le body (titre) est mal reçu
+    // 2. Vérification des champs obligatoires
     if (!req.body.title || !req.body.description) {
         // Nettoyage Cloudinary si erreur de validation
         if (req.file.filename) {
@@ -54,7 +53,7 @@ exports.createVideo = async (req, res, next) => {
         ...req.body, 
         videoUrl: path, 
         cloudinaryId: filename, 
-        user: req.user.id // Assuré par le middleware protect
+        user: req.user.id 
     };
 
     const video = await Video.create(videoData);
@@ -64,12 +63,13 @@ exports.createVideo = async (req, res, next) => {
 
     res.status(201).json({ success: true, data: video });
   } catch (err) {
-    // Nettoyage Cloudinary en cas de crash Mongo
+    // Nettoyage Cloudinary en cas de crash Mongo ou Timeout
     if (req.file && req.file.filename) {
-        await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'video' });
+        // On tente de supprimer, mais on n'attend pas forcément le résultat pour ne pas bloquer
+        cloudinary.uploader.destroy(req.file.filename, { resource_type: 'video' }).catch(e => console.log(e));
     }
-    console.error("Erreur Create Video:", err); // Log pour debugger
-    res.status(400).json({ success: false, error: err.message || "Erreur lors de la publication" });
+    console.error("❌ Erreur Upload Vidéo:", err); // Log visible dans Render Dashboard
+    res.status(500).json({ success: false, error: "Erreur lors de la publication (Vérifiez les logs serveur)" });
   }
 };
 
