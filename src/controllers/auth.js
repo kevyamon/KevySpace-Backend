@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const cloudinary = require('../config/cloudinary'); // <--- 1. IMPORT CLOUDINARY
 
 // --- UTILITAIRE : Envoyer le Token ---
 const sendTokenResponse = (user, statusCode, res) => {
@@ -22,7 +23,8 @@ const sendTokenResponse = (user, statusCode, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        avatar: user.avatar
+        avatar: user.avatar, // On garde l'ancien au cas où
+        profilePicture: user.profilePicture || user.avatar // <--- 2. AJOUT POUR LE FRONTEND
       }
     });
 };
@@ -81,7 +83,7 @@ exports.getHistory = async (req, res, next) => {
     const user = await User.findById(req.user.id).populate({
       path: 'watchHistory.video',
       select: 'title description thumbnailUrl views createdAt user likes comments',
-      populate: { path: 'user', select: 'name avatar' }
+      populate: { path: 'user', select: 'name avatar profilePicture' } // On peuple aussi profilePicture
     });
     const validHistory = user.watchHistory.filter(item => item.video !== null);
     res.status(200).json({ success: true, count: validHistory.length, data: validHistory });
@@ -112,23 +114,58 @@ exports.updateDetails = async (req, res, next) => {
 exports.updatePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
-
-    // 1. On récupère le user avec son password hashé
     const user = await User.findById(req.user.id).select('+password');
 
-    // 2. On vérifie l'ancien mot de passe
     if (!(await user.matchPassword(currentPassword))) {
       return res.status(401).json({ success: false, error: "Le mot de passe actuel est incorrect" });
     }
 
-    // 3. On met le nouveau (le hook 'pre save' va le hasher)
     user.password = newPassword;
     await user.save();
 
-    // 4. On renvoie un token frais
     sendTokenResponse(user, 200, res);
   } catch (err) {
     res.status(500).json({ success: false, error: "Erreur serveur" });
+  }
+};
+
+// @desc    Mise à jour Photo de Profil (NOUVEAU)
+// @route   PUT /api/auth/profile-picture
+exports.updateProfilePicture = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "Aucune image fournie." });
+    }
+
+    // 1. Upload vers Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: "kevyspace_avatars",
+      width: 300,
+      height: 300,
+      crop: "fill",
+      gravity: "face" 
+    });
+
+    // 2. Mise à jour DB
+    // On met à jour 'profilePicture' ET 'avatar' pour être sûr de la compatibilité
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      { 
+        profilePicture: result.secure_url,
+        avatar: result.secure_url 
+      },
+      { new: true }
+    ).select('-password');
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Photo de profil mise à jour !", 
+      user: updatedUser 
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: "Erreur lors de l'upload." });
   }
 };
 
