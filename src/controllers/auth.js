@@ -1,5 +1,5 @@
 const User = require('../models/User');
-const cloudinary = require('../config/cloudinary'); // <--- 1. IMPORT CLOUDINARY
+// Note: On n'a plus besoin d'importer cloudinary ici, car le middleware l'a déjà fait !
 
 // --- UTILITAIRE : Envoyer le Token ---
 const sendTokenResponse = (user, statusCode, res) => {
@@ -23,8 +23,8 @@ const sendTokenResponse = (user, statusCode, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        avatar: user.avatar, // On garde l'ancien au cas où
-        profilePicture: user.profilePicture || user.avatar // <--- 2. AJOUT POUR LE FRONTEND
+        avatar: user.avatar,
+        profilePicture: user.profilePicture || user.avatar
       }
     });
 };
@@ -83,7 +83,7 @@ exports.getHistory = async (req, res, next) => {
     const user = await User.findById(req.user.id).populate({
       path: 'watchHistory.video',
       select: 'title description thumbnailUrl views createdAt user likes comments',
-      populate: { path: 'user', select: 'name avatar profilePicture' } // On peuple aussi profilePicture
+      populate: { path: 'user', select: 'name avatar profilePicture' }
     });
     const validHistory = user.watchHistory.filter(item => item.video !== null);
     res.status(200).json({ success: true, count: validHistory.length, data: validHistory });
@@ -129,30 +129,26 @@ exports.updatePassword = async (req, res, next) => {
   }
 };
 
-// @desc    Mise à jour Photo de Profil (NOUVEAU)
+// @desc    Mise à jour Photo de Profil
 // @route   PUT /api/auth/profile-picture
 exports.updateProfilePicture = async (req, res, next) => {
   try {
+    // Si le middleware n'a pas renvoyé de fichier, c'est qu'il y a eu un souci ou pas d'envoi
     if (!req.file) {
       return res.status(400).json({ message: "Aucune image fournie." });
     }
 
-    // 1. Upload vers Cloudinary
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: "kevyspace_avatars",
-      width: 300,
-      height: 300,
-      crop: "fill",
-      gravity: "face" 
-    });
+    // 🚀 LA CORRECTION EST ICI :
+    // On ne fait plus "cloudinary.uploader.upload" manuellement.
+    // Le middleware l'a déjà fait, et l'URL est disponible dans req.file.path
+    const imageUrl = req.file.path; 
 
-    // 2. Mise à jour DB
-    // On met à jour 'profilePicture' ET 'avatar' pour être sûr de la compatibilité
+    // Mise à jour DB
     const updatedUser = await User.findByIdAndUpdate(
       req.user.id,
       { 
-        profilePicture: result.secure_url,
-        avatar: result.secure_url 
+        profilePicture: imageUrl,
+        avatar: imageUrl 
       },
       { new: true }
     ).select('-password');
@@ -164,8 +160,8 @@ exports.updateProfilePicture = async (req, res, next) => {
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, error: "Erreur lors de l'upload." });
+    console.error("Erreur Backend Upload:", error);
+    res.status(500).json({ success: false, error: "Erreur serveur lors de l'enregistrement." });
   }
 };
 

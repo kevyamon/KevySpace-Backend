@@ -1,8 +1,7 @@
-// backend/src/config/cloudinary.js
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
-require('dotenv').config(); // Assure-toi que dotenv est chargé ici aussi
+require('dotenv').config();
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -14,7 +13,7 @@ const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: async (req, file) => {
     
-    // 1. CAS VIDÉOS (Cours)
+    // 1. CAS VIDÉOS
     if (file.mimetype.startsWith('video')) {
       return {
         folder: 'kevyspace_videos',
@@ -22,19 +21,21 @@ const storage = new CloudinaryStorage({
         allowed_formats: ['mp4', 'mov', 'avi', 'mkv'],
       };
     } 
-    // 2. CAS IMAGES (Avatars ou Miniatures) - NOUVEAU
+    // 2. CAS IMAGES (Profil) - C'est ici qu'on ajoute la magie
     else if (file.mimetype.startsWith('image')) {
       return {
-        folder: 'kevyspace_images', // Dossier séparé pour les images
+        folder: 'kevyspace_avatars', // Dossier spécifique avatars
         resource_type: 'image',
         allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
+        // 👇 LE SECRET : On demande à Cloudinary de centrer sur le visage
+        transformation: [{ width: 400, height: 400, crop: "fill", gravity: "face" }]
       };
     }
-    // 3. CAS DOCUMENTS (PDF, Certificats)
+    // 3. CAS DOCUMENTS
     else {
       return {
         folder: 'kevyspace_docs',
-        resource_type: 'raw', // 'raw' est impératif pour les PDF pour éviter que Cloudinary ne les corrompe
+        resource_type: 'raw',
         use_filename: true,
       };
     }
