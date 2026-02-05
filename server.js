@@ -1,3 +1,4 @@
+// backend/server.js
 require('dotenv').config();
 const http = require('http');
 const app = require('./src/app');
@@ -13,34 +14,37 @@ const normalizePort = val => {
 };
 const port = normalizePort(process.env.PORT || '5000');
 
-// 2. Création du serveur HTTP natif (nécessaire pour Socket.io)
+// 2. Création du serveur HTTP natif
 const server = http.createServer(app);
 
 // 3. Initialisation de Socket.io (Temps réel)
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:5173", // On autorisera le frontend ici
+    // MODIFICATION ICI : On passe un tableau (comme dans app.js)
+    origin: [
+        "http://localhost:5173",          // Ton Frontend Local
+        "http://localhost:3000",          // Au cas où
+        process.env.FRONTEND_URL          // Ton site en Prod (Render)
+    ],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
   }
 });
 
-// On stocke io dans l'application pour pouvoir l'utiliser dans les contrôleurs
+// On stocke io dans l'application
 app.set('io', io);
 
-// 4. Gestion des événements Socket.io (Mise sur écoute)
+// 4. Gestion des événements Socket.io
 io.on('connection', (socket) => {
-  // console.log('✅ Un utilisateur est connecté au Socket (ID:', socket.id, ')');
-
+  // console.log('✅ Socket connecté:', socket.id);
   socket.on('disconnect', () => {
-    // console.log('❌ Utilisateur déconnecté (ID:', socket.id, ')');
+    // console.log('❌ Socket déconnecté:', socket.id);
   });
 });
 
-// 5. Connexion à la Base de Données et Lancement du serveur
+// 5. Connexion DB et Lancement
 const startServer = async () => {
   try {
-    // Connexion Standard pour la Production (Render)
     await mongoose.connect(process.env.MONGO_URI); 
     console.log('✅ Connecté à MongoDB Atlas');
 
@@ -48,10 +52,7 @@ const startServer = async () => {
       console.log(`🚀 Serveur KevySpace démarré sur le port ${port}`);
     });
   } catch (error) {
-    console.log("⚠️ Mode Développement 'Aveugle' ou Erreur DB détectée.");
-    console.log("❌ Erreur détail:", error.message);
-    // On ne coupe PAS le processus ici pour te permettre de continuer à coder sans crash
-    // process.exit(1); 
+    console.log("❌ Erreur DB:", error.message);
   }
 };
 
