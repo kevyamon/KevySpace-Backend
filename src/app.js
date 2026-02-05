@@ -1,4 +1,4 @@
-// src/app.js
+// backend/src/app.js
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -8,7 +8,7 @@ const cookieParser = require('cookie-parser');
 // Import des fichiers de routes
 const auth = require('./routes/auth');
 const videos = require('./routes/videos');
-const assets = require('./routes/assets'); // <--- 1. NOUVEL IMPORT AJOUTÉ
+const assets = require('./routes/assets'); 
 
 const app = express();
 
@@ -22,7 +22,12 @@ app.use(cookieParser());
 
 // 3. CORS (Autoriser le Frontend à nous parler)
 app.use(cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    // MODIFICATION ICI : On passe un tableau pour autoriser plusieurs sources
+    origin: [
+        "http://localhost:5173",          // 1. Ton Frontend Local (Vite)
+        "http://localhost:3000",          // 2. Au cas où tu changes de port
+        process.env.FRONTEND_URL          // 3. Ton vrai site en ligne (Render)
+    ],
     credentials: true
 }));
 
@@ -68,7 +73,7 @@ app.use(hpp()); // Prévient la pollution des paramètres HTTP
 // --- MONTAGE DES ROUTES ---
 app.use('/api/auth', auth);
 app.use('/api/videos', videos);
-app.use('/api', assets); // <--- 2. NOUVELLE ROUTE ACTIVÉE (Ressources & Certifs)
+app.use('/api', assets); 
 
 // --- ROUTE DE TEST ---
 app.get('/', (req, res) => {
