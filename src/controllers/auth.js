@@ -1,5 +1,5 @@
 const User = require('../models/User');
-// Note: On n'a plus besoin d'importer cloudinary ici, car le middleware l'a déjà fait !
+const Notification = require('../models/Notification'); // <--- 1. IMPORT DU MODÈLE NOTIFICATION
 
 // --- UTILITAIRE : Envoyer le Token ---
 const sendTokenResponse = (user, statusCode, res) => {
@@ -36,7 +36,19 @@ exports.register = async (req, res, next) => {
     const { name, email, password, phone } = req.body;
     const role = email === process.env.ADMIN_MAIL ? 'admin' : 'user';
 
+    // 1. Création de l'utilisateur
     const user = await User.create({ name, email, password, phone, role });
+
+    // 2. CRÉATION DE LA NOTIFICATION DE BIENVENUE (C'est ça qui active la cloche)
+    await Notification.create({
+      user: user._id,
+      title: "Bienvenue sur KevySpace ! 🚀",
+      message: `Ravi de vous compter parmi nous, ${name}. Votre parcours commence maintenant. N'hésitez pas à compléter votre profil.`,
+      type: 'success',
+      isRead: false // Important pour le point rouge
+    });
+
+    // 3. Envoi du token
     sendTokenResponse(user, 201, res);
   } catch (err) {
     let message = err.message;
