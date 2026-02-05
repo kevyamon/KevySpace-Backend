@@ -6,7 +6,8 @@ require('dotenv').config();
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true // <--- AJOUTE CETTE LIGNE (Force le HTTPS)
 });
 
 const storage = new CloudinaryStorage({
@@ -21,13 +22,13 @@ const storage = new CloudinaryStorage({
         allowed_formats: ['mp4', 'mov', 'avi', 'mkv'],
       };
     } 
-    // 2. CAS IMAGES (Profil) - C'est ici qu'on ajoute la magie
+    // 2. CAS IMAGES
     else if (file.mimetype.startsWith('image')) {
       return {
-        folder: 'kevyspace_avatars', // Dossier spécifique avatars
+        folder: 'kevyspace_avatars',
         resource_type: 'image',
         allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
-        // 👇 LE SECRET : On demande à Cloudinary de centrer sur le visage
+        // Transformation pour alléger et sécuriser
         transformation: [{ width: 400, height: 400, crop: "fill", gravity: "face" }]
       };
     }
