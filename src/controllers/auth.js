@@ -1,5 +1,6 @@
+// src/controllers/auth.js
 const User = require('../models/User');
-const Notification = require('../models/Notification'); // <--- 1. IMPORT DU MODÈLE NOTIFICATION
+const Notification = require('../models/Notification'); 
 
 // --- UTILITAIRE : Envoyer le Token ---
 const sendTokenResponse = (user, statusCode, res) => {
@@ -39,13 +40,13 @@ exports.register = async (req, res, next) => {
     // 1. Création de l'utilisateur
     const user = await User.create({ name, email, password, phone, role });
 
-    // 2. CRÉATION DE LA NOTIFICATION DE BIENVENUE (C'est ça qui active la cloche)
+    // 2. CRÉATION DE LA NOTIFICATION DE BIENVENUE
     await Notification.create({
       user: user._id,
       title: "Bienvenue sur KevySpace ! 🚀",
       message: `Ravi de vous compter parmi nous, ${name}. Votre parcours commence maintenant. N'hésitez pas à compléter votre profil.`,
       type: 'success',
-      isRead: false // Important pour le point rouge
+      isRead: false
     });
 
     // 3. Envoi du token
@@ -105,18 +106,39 @@ exports.getHistory = async (req, res, next) => {
 };
 
 // @desc    Mise à jour infos (Nom, Email, Tel)
+// @route   PUT /api/auth/updatedetails
 exports.updateDetails = async (req, res, next) => {
   try {
-    const fieldsToUpdate = {
-      name: req.body.name,
-      email: req.body.email,
-      phone: req.body.phone
-    };
+    // 1. On construit l'objet dynamiquement (pour éviter d'écraser avec null/undefined)
+    const fieldsToUpdate = {};
+    if (req.body.name) fieldsToUpdate.name = req.body.name;
+    if (req.body.email) fieldsToUpdate.email = req.body.email;
+    if (req.body.phone) fieldsToUpdate.phone = req.body.phone;
+
+    // 2. VÉRIFICATION DE SÉCURITÉ (DOUBLONS)
+    // On vérifie manuellement si l'email/téléphone est pris par UN AUTRE utilisateur
+    if (fieldsToUpdate.email) {
+        const owner = await User.findOne({ email: fieldsToUpdate.email });
+        if (owner && owner._id.toString() !== req.user.id) {
+             return res.status(400).json({ success: false, error: "Cet email est déjà utilisé par un autre compte." });
+        }
+    }
+    if (fieldsToUpdate.phone) {
+        const owner = await User.findOne({ phone: fieldsToUpdate.phone });
+        if (owner && owner._id.toString() !== req.user.id) {
+             return res.status(400).json({ success: false, error: "Ce numéro est déjà utilisé par un autre compte." });
+        }
+    }
+
+    // 3. Mise à jour
     const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, { new: true, runValidators: true });
+    
     res.status(200).json({ success: true, data: user });
+
   } catch (err) {
+    // Fallback erreur standard
     let message = err.message;
-    if (err.code === 11000) message = "Email ou téléphone déjà utilisé.";
+    if (err.code === 11000) message = "Données déjà existantes (Email ou Téléphone).";
     res.status(400).json({ success: false, error: message });
   }
 };
@@ -145,17 +167,12 @@ exports.updatePassword = async (req, res, next) => {
 // @route   PUT /api/auth/profile-picture
 exports.updateProfilePicture = async (req, res, next) => {
   try {
-    // Si le middleware n'a pas renvoyé de fichier, c'est qu'il y a eu un souci ou pas d'envoi
     if (!req.file) {
       return res.status(400).json({ message: "Aucune image fournie." });
     }
 
-    // 🚀 LA CORRECTION EST ICI :
-    // On ne fait plus "cloudinary.uploader.upload" manuellement.
-    // Le middleware l'a déjà fait, et l'URL est disponible dans req.file.path
     const imageUrl = req.file.path; 
 
-    // Mise à jour DB
     const updatedUser = await User.findByIdAndUpdate(
       req.user.id,
       { 

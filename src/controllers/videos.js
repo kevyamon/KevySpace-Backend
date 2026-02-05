@@ -34,10 +34,28 @@ exports.getVideo = async (req, res, next) => {
 // @route   POST /api/videos
 exports.createVideo = async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: 'Veuillez uploader une vidéo' });
+    // 1. Vérification du fichier
+    if (!req.file) return res.status(400).json({ success: false, error: 'Veuillez uploader un fichier vidéo' });
+
+    // 2. Vérification des champs obligatoires (CORRECTIF ICI)
+    // Souvent l'erreur vient du fait qu'on envoie le fichier mais que le body (titre) est mal reçu
+    if (!req.body.title || !req.body.description) {
+        // Nettoyage Cloudinary si erreur de validation
+        if (req.file.filename) {
+            await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'video' });
+        }
+        return res.status(400).json({ success: false, error: 'Titre et description sont requis.' });
+    }
 
     const { path, filename } = req.file;
-    const videoData = { ...req.body, videoUrl: path, cloudinaryId: filename, user: req.user.id };
+    
+    // 3. Création sécurisée
+    const videoData = { 
+        ...req.body, 
+        videoUrl: path, 
+        cloudinaryId: filename, 
+        user: req.user.id // Assuré par le middleware protect
+    };
 
     const video = await Video.create(videoData);
 
@@ -46,10 +64,12 @@ exports.createVideo = async (req, res, next) => {
 
     res.status(201).json({ success: true, data: video });
   } catch (err) {
+    // Nettoyage Cloudinary en cas de crash Mongo
     if (req.file && req.file.filename) {
         await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'video' });
     }
-    res.status(400).json({ success: false, error: err.message });
+    console.error("Erreur Create Video:", err); // Log pour debugger
+    res.status(400).json({ success: false, error: err.message || "Erreur lors de la publication" });
   }
 };
 
@@ -86,7 +106,7 @@ exports.likeVideo = async (req, res, next) => {
 
     await video.save();
 
-    // SOCKET : Diffusion des Likes (Ça marche déjà)
+    // SOCKET : Diffusion des Likes
     const io = req.app.get('io');
     io.emit('video_updated', { id: video._id, likes: video.likes });
 
@@ -195,8 +215,6 @@ exports.viewVideo = async (req, res, next) => {
     await User.findByIdAndUpdate(req.user.id, { $pull: { watchHistory: { video: req.params.id } } });
     await User.findByIdAndUpdate(req.user.id, { $push: { watchHistory: { $each: [{ video: req.params.id, watchedAt: Date.now() }], $position: 0 } } });
 
-    // --- ICI : ON COPIE LA LOGIQUE DES LIKES ---
-    // On crie à tout le monde : "Cette vidéo a une nouvelle vue !"
     const io = req.app.get('io');
     io.emit('video_viewed', { id: video._id, views: video.views }); 
 
