@@ -34,7 +34,6 @@ const UserSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  // --- NOUVEAU : HISTORIQUE DE VISIONNAGE ---
   watchHistory: [
     {
       video: {
@@ -53,10 +52,23 @@ const UserSchema = new mongoose.Schema({
     minlength: [6, 'Le mot de passe doit contenir au moins 6 caractères'],
     select: false 
   },
+  
+  // --- CORRECTION ICI ---
+  
+  // 1. On garde avatar mais on enlève le texte par défaut qui casse tout
   avatar: {
     type: String,
-    default: 'no-photo.jpg'
+    default: "" // Vide par défaut = pas d'image
   },
+
+  // 2. AJOUT CRUCIAL : On ajoute ce champ pour que MongoDB accepte de l'enregistrer
+  profilePicture: {
+    type: String,
+    default: ""
+  },
+
+  // ----------------------
+
   createdAt: {
     type: Date,
     default: Date.now
