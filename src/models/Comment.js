@@ -18,6 +18,12 @@ const CommentSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  // AJOUT : Pour gérer les réponses (Threads)
+  parentComment: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Comment',
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

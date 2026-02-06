@@ -1,20 +1,8 @@
 // src/models/Video.js
 const mongoose = require('mongoose');
 
-// Schéma des commentaires (Sous-document)
-const CommentSchema = new mongoose.Schema({
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  name: String,   // On garde le nom en cache pour l'affichage rapide
-  avatar: String, // On garde l'avatar en cache
-  text: {
-    type: String,
-    required: [true, 'Veuillez ajouter un commentaire']
-  }
-}, { timestamps: true }); // <--- MAGIE ICI : Crée createdAt et updatedAt automatiquement pour chaque commentaire
+// On supprime l'ancien Schema "CommentSchema" qui était embedded ici.
+// Les commentaires sont désormais gérés par leur propre modèle (src/models/Comment.js)
 
 const VideoSchema = new mongoose.Schema({
   user: {
@@ -51,7 +39,13 @@ const VideoSchema = new mongoose.Schema({
       ref: 'User'
     }
   ],
-  comments: [CommentSchema], // On utilise le schéma défini plus haut
+  // MODIFICATION ICI : On stocke uniquement les IDs des commentaires
+  comments: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Comment'
+    }
+  ],
   createdAt: {
     type: Date,
     default: Date.now

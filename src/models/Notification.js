@@ -1,3 +1,4 @@
+// src/models/Notification.js
 const mongoose = require('mongoose');
 
 const NotificationSchema = new mongoose.Schema({
@@ -16,12 +17,22 @@ const NotificationSchema = new mongoose.Schema({
   },
   isRead: {
     type: Boolean,
-    default: false // C'est ça qui active le point rouge (non lu)
+    default: false
   },
   type: {
     type: String,
     enum: ['info', 'warning', 'success', 'error'],
     default: 'info'
+  },
+  // AJOUT : Lien de redirection (ex: /watch/VIDEO_ID)
+  link: {
+    type: String,
+    default: null
+  },
+  // AJOUT : Métadonnées pour le frontend si besoin
+  metadata: {
+    videoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Video' },
+    commentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Comment' }
   },
   createdAt: {
     type: Date,
