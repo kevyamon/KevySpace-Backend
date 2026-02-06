@@ -1,6 +1,7 @@
 // src/controllers/videos.js
 const Video = require('../models/Video');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 const { cloudinary } = require('../config/cloudinary');
 
 // @desc    Récupérer toutes les vidéos
@@ -58,17 +59,52 @@ exports.createVideo = async (req, res, next) => {
 
     const video = await Video.create(videoData);
 
+    // 4. SOCKET : Diffusion temps réel
     const io = req.app.get('io');
     io.emit('video_added', video);
+
+    // 5. NOTIFICATION GLOBALE : Tous les utilisateurs sont notifiés
+    const allUsers = await User.find({ _id: { $ne: req.user.id } }); // Tous sauf l'admin
+    
+    const notificationPromises = allUsers.map(user => 
+      Notification.create({
+        user: user._id,
+        title: "Nouveau cours disponible ! 🎓",
+        message: `"${video.title}" vient d'être publié. Découvrez-le maintenant !`,
+        type: 'success',
+        link: `/watch/${video._id}`,
+        metadata: {
+          videoId: video._id
+        }
+      })
+    );
+
+    await Promise.all(notificationPromises);
+
+    // Diffusion Socket pour chaque utilisateur
+    if (io) {
+      allUsers.forEach(user => {
+        io.emit('new_notification', {
+          notification: {
+            user: user._id,
+            title: "Nouveau cours disponible ! 🎓",
+            message: `"${video.title}" vient d'être publié. Découvrez-le maintenant !`,
+            type: 'success',
+            link: `/watch/${video._id}`,
+            createdAt: new Date()
+          },
+          targetUserId: user._id.toString()
+        });
+      });
+    }
 
     res.status(201).json({ success: true, data: video });
   } catch (err) {
     // Nettoyage Cloudinary en cas de crash Mongo ou Timeout
     if (req.file && req.file.filename) {
-        // On tente de supprimer, mais on n'attend pas forcément le résultat pour ne pas bloquer
         cloudinary.uploader.destroy(req.file.filename, { resource_type: 'video' }).catch(e => console.log(e));
     }
-    console.error("❌ Erreur Upload Vidéo:", err); // Log visible dans Render Dashboard
+    console.error("❌ Erreur Upload Vidéo:", err);
     res.status(500).json({ success: false, error: "Erreur lors de la publication (Vérifiez les logs serveur)" });
   }
 };
@@ -84,8 +120,41 @@ exports.deleteVideo = async (req, res, next) => {
 
     await video.deleteOne();
 
+    // SOCKET : Diffusion temps réel
     const io = req.app.get('io');
     io.emit('video_deleted', req.params.id);
+
+    // NOTIFICATION GLOBALE : Tous les utilisateurs sont notifiés
+    const allUsers = await User.find({ _id: { $ne: req.user.id } });
+    
+    const notificationPromises = allUsers.map(user => 
+      Notification.create({
+        user: user._id,
+        title: "Cours retiré 📚",
+        message: `Le cours "${video.title}" n'est plus disponible.`,
+        type: 'warning',
+        link: '/home'
+      })
+    );
+
+    await Promise.all(notificationPromises);
+
+    // Diffusion Socket
+    if (io) {
+      allUsers.forEach(user => {
+        io.emit('new_notification', {
+          notification: {
+            user: user._id,
+            title: "Cours retiré 📚",
+            message: `Le cours "${video.title}" n'est plus disponible.`,
+            type: 'warning',
+            link: '/home',
+            createdAt: new Date()
+          },
+          targetUserId: user._id.toString()
+        });
+      });
+    }
 
     res.status(200).json({ success: true, data: {} });
   } catch (err) {
