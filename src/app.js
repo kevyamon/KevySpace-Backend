@@ -9,6 +9,7 @@ const cookieParser = require('cookie-parser');
 const auth = require('./routes/auth');
 const videos = require('./routes/videos');
 const assets = require('./routes/assets'); 
+const comments = require('./routes/comments'); // <--- 1. IMPORT AJOUTÉ
 
 const app = express();
 
@@ -22,7 +23,6 @@ app.use(cookieParser());
 
 // 3. CORS (Autoriser le Frontend à nous parler)
 app.use(cors({
-    // MODIFICATION ICI : On passe un tableau pour autoriser plusieurs sources
     origin: [
         "http://localhost:5173",          // 1. Ton Frontend Local (Vite)
         "http://localhost:3000",          // 2. Au cas où tu changes de port
@@ -74,6 +74,7 @@ app.use(hpp()); // Prévient la pollution des paramètres HTTP
 app.use('/api/auth', auth);
 app.use('/api/videos', videos);
 app.use('/api', assets); 
+app.use('/api', comments); // <--- 2. ROUTE AJOUTÉE (Gère /videos/:id/comments et /comments/:id)
 
 // --- ROUTE DE TEST ---
 app.get('/', (req, res) => {
