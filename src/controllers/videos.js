@@ -35,12 +35,9 @@ exports.getVideo = async (req, res, next) => {
 // @route   POST /api/videos
 exports.createVideo = async (req, res, next) => {
   try {
-    // 1. Vérification du fichier
     if (!req.file) return res.status(400).json({ success: false, error: 'Veuillez uploader un fichier vidéo' });
 
-    // 2. Vérification des champs obligatoires
     if (!req.body.title || !req.body.description) {
-        // Nettoyage Cloudinary si erreur de validation
         if (req.file.filename) {
             await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'video' });
         }
@@ -49,7 +46,6 @@ exports.createVideo = async (req, res, next) => {
 
     const { path, filename } = req.file;
     
-    // 3. Création sécurisée
     const videoData = { 
         ...req.body, 
         videoUrl: path, 
@@ -59,16 +55,25 @@ exports.createVideo = async (req, res, next) => {
 
     const video = await Video.create(videoData);
 
-    // 4. SOCKET : Diffusion temps réel
-    const io = req.app.get('io');
-    io.emit('video_added', video);
+    // Populer la vidéo pour avoir les infos complètes
+    const populatedVideo = await Video.findById(video._id).populate('user', 'name avatar');
 
-    // 5. NOTIFICATION GLOBALE : Tous les utilisateurs sont notifiés
-    const allUsers = await User.find({ _id: { $ne: req.user.id } }); // Tous sauf l'admin
+    const io = req.app.get('io');
+
+    // SOCKET : Diffusion temps réel de la nouvelle vidéo
+    if (io) {
+      io.emit('video_action', { 
+        type: 'add', 
+        data: populatedVideo 
+      });
+    }
+
+    // NOTIFICATION GLOBALE : Tous les utilisateurs sauf l'admin
+    const allUsers = await User.find({ _id: { $ne: req.user.id } });
     
-    const notificationPromises = allUsers.map(user => 
-      Notification.create({
-        user: user._id,
+    const notificationPromises = allUsers.map(async (targetUser) => {
+      const notif = await Notification.create({
+        user: targetUser._id,
         title: "Nouveau cours disponible ! 🎓",
         message: `"${video.title}" vient d'être publié. Découvrez-le maintenant !`,
         type: 'success',
@@ -76,31 +81,31 @@ exports.createVideo = async (req, res, next) => {
         metadata: {
           videoId: video._id
         }
-      })
-    );
+      });
+
+      // Émettre la notification avec l'ID MongoDB pour le frontend
+      if (io) {
+        io.emit('new_notification', {
+          targetUserId: targetUser._id.toString(),
+          notification: {
+            _id: notif._id,
+            title: notif.title,
+            message: notif.message,
+            type: notif.type,
+            link: notif.link,
+            isRead: false,
+            createdAt: notif.createdAt
+          }
+        });
+      }
+
+      return notif;
+    });
 
     await Promise.all(notificationPromises);
 
-    // Diffusion Socket pour chaque utilisateur
-    if (io) {
-      allUsers.forEach(user => {
-        io.emit('new_notification', {
-          notification: {
-            user: user._id,
-            title: "Nouveau cours disponible ! 🎓",
-            message: `"${video.title}" vient d'être publié. Découvrez-le maintenant !`,
-            type: 'success',
-            link: `/watch/${video._id}`,
-            createdAt: new Date()
-          },
-          targetUserId: user._id.toString()
-        });
-      });
-    }
-
-    res.status(201).json({ success: true, data: video });
+    res.status(201).json({ success: true, data: populatedVideo });
   } catch (err) {
-    // Nettoyage Cloudinary en cas de crash Mongo ou Timeout
     if (req.file && req.file.filename) {
         cloudinary.uploader.destroy(req.file.filename, { resource_type: 'video' }).catch(e => console.log(e));
     }
@@ -116,45 +121,54 @@ exports.deleteVideo = async (req, res, next) => {
     const video = await Video.findById(req.params.id);
     if (!video) return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
 
+    const videoTitle = video.title;
+    const videoId = video._id.toString();
+
     if (video.cloudinaryId) await cloudinary.uploader.destroy(video.cloudinaryId, { resource_type: 'video' });
 
     await video.deleteOne();
 
-    // SOCKET : Diffusion temps réel
     const io = req.app.get('io');
-    io.emit('video_deleted', req.params.id);
 
-    // NOTIFICATION GLOBALE : Tous les utilisateurs sont notifiés
-    const allUsers = await User.find({ _id: { $ne: req.user.id } });
-    
-    const notificationPromises = allUsers.map(user => 
-      Notification.create({
-        user: user._id,
-        title: "Cours retiré 📚",
-        message: `Le cours "${video.title}" n'est plus disponible.`,
-        type: 'warning',
-        link: '/home'
-      })
-    );
-
-    await Promise.all(notificationPromises);
-
-    // Diffusion Socket
+    // SOCKET : Diffusion temps réel de la suppression
     if (io) {
-      allUsers.forEach(user => {
-        io.emit('new_notification', {
-          notification: {
-            user: user._id,
-            title: "Cours retiré 📚",
-            message: `Le cours "${video.title}" n'est plus disponible.`,
-            type: 'warning',
-            link: '/home',
-            createdAt: new Date()
-          },
-          targetUserId: user._id.toString()
-        });
+      io.emit('video_action', { 
+        type: 'delete', 
+        id: videoId 
       });
     }
+
+    // NOTIFICATION GLOBALE : Tous les utilisateurs sauf l'admin
+    const allUsers = await User.find({ _id: { $ne: req.user.id } });
+    
+    const notificationPromises = allUsers.map(async (targetUser) => {
+      const notif = await Notification.create({
+        user: targetUser._id,
+        title: "Cours retiré 📚",
+        message: `Le cours "${videoTitle}" n'est plus disponible.`,
+        type: 'warning',
+        link: '/'
+      });
+
+      if (io) {
+        io.emit('new_notification', {
+          targetUserId: targetUser._id.toString(),
+          notification: {
+            _id: notif._id,
+            title: notif.title,
+            message: notif.message,
+            type: notif.type,
+            link: notif.link,
+            isRead: false,
+            createdAt: notif.createdAt
+          }
+        });
+      }
+
+      return notif;
+    });
+
+    await Promise.all(notificationPromises);
 
     res.status(200).json({ success: true, data: {} });
   } catch (err) {
@@ -175,9 +189,8 @@ exports.likeVideo = async (req, res, next) => {
 
     await video.save();
 
-    // SOCKET : Diffusion des Likes
     const io = req.app.get('io');
-    io.emit('video_updated', { id: video._id, likes: video.likes });
+    if (io) io.emit('video_updated', { id: video._id, likes: video.likes });
 
     res.status(200).json({ success: true, data: video.likes });
   } catch (err) {
@@ -205,7 +218,7 @@ exports.commentVideo = async (req, res, next) => {
     await video.populate('comments.user', 'name avatar');
 
     const io = req.app.get('io');
-    io.emit('video_comments_updated', { id: video._id, comments: video.comments });
+    if (io) io.emit('video_comments_updated', { id: video._id, comments: video.comments });
 
     res.status(201).json({ success: true, data: video.comments });
   } catch (err) {
@@ -232,7 +245,7 @@ exports.deleteComment = async (req, res, next) => {
     await video.populate('comments.user', 'name avatar');
 
     const io = req.app.get('io');
-    io.emit('video_comments_updated', { id: video._id, comments: video.comments });
+    if (io) io.emit('video_comments_updated', { id: video._id, comments: video.comments });
 
     res.status(200).json({ success: true, data: video.comments });
   } catch (err) {
@@ -260,7 +273,7 @@ exports.updateComment = async (req, res, next) => {
     await video.populate('comments.user', 'name avatar');
 
     const io = req.app.get('io');
-    io.emit('video_comments_updated', { id: video._id, comments: video.comments });
+    if (io) io.emit('video_comments_updated', { id: video._id, comments: video.comments });
 
     res.status(200).json({ success: true, data: video.comments });
   } catch (err) {
@@ -280,12 +293,11 @@ exports.viewVideo = async (req, res, next) => {
 
     if (!video) return res.status(404).json({ success: false, error: 'Vidéo introuvable' });
 
-    // Gestion historique
     await User.findByIdAndUpdate(req.user.id, { $pull: { watchHistory: { video: req.params.id } } });
     await User.findByIdAndUpdate(req.user.id, { $push: { watchHistory: { $each: [{ video: req.params.id, watchedAt: Date.now() }], $position: 0 } } });
 
     const io = req.app.get('io');
-    io.emit('video_viewed', { id: video._id, views: video.views }); 
+    if (io) io.emit('video_viewed', { id: video._id, views: video.views }); 
 
     res.status(200).json({ success: true, data: video });
   } catch (err) {
