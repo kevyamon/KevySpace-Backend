@@ -12,7 +12,7 @@ exports.getComments = async (req, res, next) => {
         path: 'user',
         select: 'name profilePicture' 
       })
-      .populate({ // On récupère aussi les infos si c'est une réponse
+      .populate({
          path: 'parentComment',
          select: 'user',
          populate: { path: 'user', select: 'name' }
@@ -34,47 +34,49 @@ exports.getComments = async (req, res, next) => {
 // @route   POST /api/videos/:videoId/comments
 exports.addComment = async (req, res, next) => {
   try {
-    // 1. Préparation des données
     const { text, parentComment } = req.body;
     
-    // Payload pour la création
     const commentData = {
         text,
         video: req.params.videoId,
         user: req.user.id
     };
     
-    // Si c'est une réponse, on ajoute l'ID du parent
     if (parentComment) {
         commentData.parentComment = parentComment;
     }
 
-    // 2. Vérification vidéo
-    const video = await Video.findById(req.params.videoId).populate('user'); // On a besoin du user de la vidéo (Admin)
+    const video = await Video.findById(req.params.videoId).populate('user');
     if (!video) {
       return res.status(404).json({ success: false, error: 'Vidéo non trouvée' });
     }
 
-    // 3. Création du commentaire
     const comment = await Comment.create(commentData);
 
-    // 4. Mise à jour de la vidéo (CORRECTIF BUG: On push l'ID, pas l'objet)
     video.comments.push(comment._id);
     await video.save();
 
-    // 5. Populer le nouveau commentaire pour le renvoyer
     const populatedComment = await Comment.findById(comment._id)
         .populate('user', 'name profilePicture')
         .populate('parentComment');
 
-    // --- 6. INTELLIGENCE NOTIFICATION ---
-    
+    // --- SOCKET IO : ÉMISSION TEMPS RÉEL (AJOUT) ---
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('comment_action', {
+        type: 'add',
+        data: populatedComment,
+        videoId: req.params.videoId,
+        userId: req.user.id
+      });
+    }
+
+    // --- INTELLIGENCE NOTIFICATION ---
     let notifyUserId = null;
     let notifTitle = "";
     let notifMessage = "";
 
     if (parentComment) {
-        // CAS 1 : C'est une réponse -> On notifie l'auteur du commentaire parent
         const parent = await Comment.findById(parentComment);
         if (parent && parent.user.toString() !== req.user.id) {
             notifyUserId = parent.user;
@@ -82,7 +84,6 @@ exports.addComment = async (req, res, next) => {
             notifMessage = `${req.user.name} a répondu à votre commentaire`;
         }
     } else {
-        // CAS 2 : Commentaire racine -> On notifie l'Admin (Propriétaire vidéo)
         if (video.user._id.toString() !== req.user.id) {
             notifyUserId = video.user._id;
             notifTitle = "Nouveau commentaire 💬";
@@ -90,7 +91,6 @@ exports.addComment = async (req, res, next) => {
         }
     }
 
-    // Envoi de la notification si nécessaire
     if (notifyUserId) {
         const notification = await Notification.create({
             user: notifyUserId,
@@ -104,8 +104,6 @@ exports.addComment = async (req, res, next) => {
             }
         });
 
-        // SOCKET IO
-        const io = req.app.get('io');
         if (io) {
             io.emit('new_notification', {
                 notification,
@@ -113,7 +111,6 @@ exports.addComment = async (req, res, next) => {
             });
         }
     }
-    // -------------------------------------
 
     res.status(201).json({
       success: true,
@@ -139,10 +136,24 @@ exports.updateComment = async (req, res, next) => {
       return res.status(401).json({ success: false, error: 'Non autorisé' });
     }
 
+    // On garde le videoId avant la mise à jour
+    const videoId = comment.video.toString();
+
     comment = await Comment.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true
     }).populate('user', 'name profilePicture');
+
+    // --- SOCKET IO : ÉMISSION TEMPS RÉEL (MODIFICATION) ---
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('comment_action', {
+        type: 'update',
+        data: comment,
+        videoId: videoId,
+        userId: req.user.id
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -167,14 +178,26 @@ exports.deleteComment = async (req, res, next) => {
       return res.status(401).json({ success: false, error: 'Non autorisé' });
     }
 
-    // Retirer de la liste vidéo
+    // On garde les IDs avant suppression
+    const videoId = comment.video.toString();
+    const commentId = comment._id.toString();
+
     await Video.findByIdAndUpdate(comment.video, {
       $pull: { comments: comment._id }
     });
 
-    // Si c'est un parent, on pourrait vouloir supprimer les réponses (Cascade)
-    // Pour l'instant on supprime juste le commentaire lui-même
     await comment.deleteOne();
+
+    // --- SOCKET IO : ÉMISSION TEMPS RÉEL (SUPPRESSION) ---
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('comment_action', {
+        type: 'delete',
+        id: commentId,
+        videoId: videoId,
+        userId: req.user.id
+      });
+    }
 
     res.status(200).json({
       success: true,
